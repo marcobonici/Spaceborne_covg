@@ -1,0 +1,44 @@
+# options for the 3x2pt Gaussian covariance matrix computation
+# Author: Davide Sciotti
+
+zbins: 10  # number of redshift bins
+EP_or_ED: 'EP'  # or 'ED'. Equipopulated or equidistant redshift bins
+
+ell_min: 10  # minimum ell for the angular power spectra
+ell_max: 5000  # maximum ell for the angular power spectra
+ell_bins: 20  # number of ell bins for the angular power spectra
+
+# alternatively, one can specify the ell grid directly (set to "null" if you prefer to use ell_min, ell_max, ell_bins)
+#ell_path: '../input/ell_values.txt'  # path to txt file with the ell grid
+#delta_ell_path: '../input/delta_ell_values.txt' # path to txt file with the delta ell grid
+ell_path: null
+delta_ell_path: null
+
+n_gal: 30  # number of galaxies per arcmin^2. This scalar must be provided for equipopulated ('EP') redshift bins
+# path to txt file with the number of galaxies per arcmin^2 for each redshift bin. #  This must be provided for
+#  equidistant ('ED') redshift bins.
+#n_gal_path: '../input/n_gal.txt'
+n_gal_path: null
+
+# intrinsic ellipticity dispersion per *component*. The total dispersion is
+# sigma_eps = sigma_eps_i * sqrt(2), and the term entering the covariance is sigma_eps^2
+sigma_eps_i: 0.26
+survey_area: 14_700  # in deg^2
+
+
+# datavector and covariance ordering options
+triu_tril: 'triu'  # or 'tril'. Which elements of the (symmetric) auto-spectra are kept
+row_col_major: 'row-major'  # whether the flattening of the spectra is in row-major or column-major order
+block_index: 'ell'  # or 'ij'. whether the block of the covariance are indexed by the ell or redshift pair index
+use_2DCLOE: false # whether to order the 3x2pt covariance in the format used AFTER #870 MERGE
+
+#cl_LL_3D_path: '../input/example_cls/cl_LL_3D.npy'
+#cl_GL_3D_path: '../input/example_cls/cl_GL_3D.npy'
+#cl_GG_3D_path: '../input/example_cls/cl_GG_3D.npy'
+cl_LL_3D_path: '../input/march_2023/Cl_LL.npy'
+cl_GL_3D_path: '../input/march_2023/Cl_LL.npy'
+cl_GG_3D_path: '../input/march_2023/Cl_LL.npy'
+
+output_folder: '../output'
+
+
