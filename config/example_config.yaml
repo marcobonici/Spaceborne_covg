@@ -35,9 +35,9 @@ use_2DCLOE: false # whether to order the 3x2pt covariance in the format used AFT
 #cl_LL_3D_path: '../input/example_cls/cl_LL_3D.npy'
 #cl_GL_3D_path: '../input/example_cls/cl_GL_3D.npy'
 #cl_GG_3D_path: '../input/example_cls/cl_GG_3D.npy'
-cl_LL_3D_path: '../input/march_2023/Cl_LL.npy'
-cl_GL_3D_path: '../input/march_2023/Cl_LL.npy'
-cl_GG_3D_path: '../input/march_2023/Cl_LL.npy'
+cl_LL_3D_path: '../input/Cl_LL.npy'
+cl_GL_3D_path: '../input/Cl_LL.npy'
+cl_GG_3D_path: '../input/Cl_LL.npy'
 
 output_folder: '../output'
 

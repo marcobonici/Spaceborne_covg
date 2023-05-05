@@ -143,11 +143,6 @@ np.save(f'{output_folder}/cov_Gauss_3x2pt.npy', cov_3x2pt_2D)
 with open(f'{output_folder}/other_specs.txt', 'w') as file:
     file.write(json.dumps(other_quantities_tosave))
 
-plt.matshow(np.log10(cov_3x2pt_2D))
-
-del cov_3x2pt_2D
-gc.collect()
-
 print(f'Done')
 print(f'Covariance files saved in {output_folder}')
 
