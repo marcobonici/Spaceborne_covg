@@ -15,8 +15,6 @@ import utils
 with open('../config/example_config.yaml', 'r') as ymlfile:
     cfg = yaml.load(ymlfile, Loader=yaml.FullLoader)
 
-# cfg = yaml.load(sys.stdin, Loader=yaml.FullLoader)
-
 survey_area = cfg['survey_area']  # deg^2
 deg2_in_sphere = 41252.96
 fsky = survey_area / deg2_in_sphere
@@ -128,7 +126,7 @@ gc.collect()
 if not cfg['use_2DCLOE']:
     cov_3x2pt_2D = utils.cov_4D_to_2D(cov_3x2pt_4D, block_index=block_index, optimize=True)
 elif cfg['use_2DCLOE']:
-    cov_3x2pt_2D = utils.cov_4D_to_2DCLOE_3x2pt(cov_3x2pt_4D, nbl, zbins)
+    cov_3x2pt_2D = utils.cov_4D_to_2DCLOE_3x2pt(cov_3x2pt_4D, zbins, block_index='ell')
 else:
     raise ValueError('use_2DCLOE must be a true or false')
 

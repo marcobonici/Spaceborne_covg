@@ -584,7 +584,7 @@ def array_3D_to_4D(cov_3D, nbl, npairs):
     return cov_4D
 
 
-def cov_2D_to_4D(cov_2D, nbl, block_index='vincenzo', optimize=False):
+def cov_2D_to_4D(cov_2D, nbl, block_index='vincenzo', optimize=True):
     """ new (more elegant) version of cov_2D_to_4D. Also works for 3x2pt. The order
     of the for loops does not affect the result!
 
@@ -693,7 +693,7 @@ def cov_4D_to_2D(cov_4D, block_index='vincenzo', optimize=True):
     return cov_2D
 
 
-def cov_4D_to_2DCLOE_3x2pt(cov_4D, nbl, zbins, block_index='vincenzo'):
+def cov_4D_to_2DCLOE_3x2pt(cov_4D, zbins, block_index='vincenzo'):
     """
     Reshape according to the "multi-diagonal", non-square blocks 2D_CLOE ordering. Note that this is only necessary for
     the 3x2pt probe.
