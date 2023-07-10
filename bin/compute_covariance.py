@@ -164,7 +164,7 @@ other_quantities_tosave = {
     'sigma_eps': sigma_eps,
 }
 
-np.save(f'{output_folder}/cov_Gauss_3x2pt.npy', cov_3x2pt_2D)
+np.save(f'{output_folder}/cov_Gauss_3x2pt_2D_{covariance_ordering_2D}.npy', cov_3x2pt_2D)
 
 with open(f'{output_folder}/other_specs.txt', 'w') as file:
     file.write(json.dumps(other_quantities_tosave))
