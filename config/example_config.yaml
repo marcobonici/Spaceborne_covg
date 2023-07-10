@@ -29,8 +29,14 @@ survey_area: 14_700  # in deg^2
 # datavector and covariance ordering options
 triu_tril: 'triu'  # or 'tril'. Which elements of the (symmetric) auto-spectra are kept
 row_col_major: 'row-major'  # whether the flattening of the spectra is in row-major or column-major order
-block_index: 'ell'  # or 'ij'. whether the block of the covariance are indexed by the ell or redshift pair index
-use_2DCLOE: false # whether to order the 3x2pt covariance in the format used AFTER #870 MERGE
+covariance_ordering_2D: 'probe_ell_zpair' # must be one of ['probe_ell_zpair', 'probe_zpair_ell', 'ell_probe_zpair', 'zpair_probe_ell']
+# the naming convention is to have the outermost loop on the left, and the innermost loop on the right; so, e.g.,
+# probe_ell_zpair means that the outermost loop is on the probes, the middle loop is on ell and the innermost loop is on zpair
+# CLOE v1 needs as input the ell_probe_zpair ordering.
+# CLOE v2 needs as input the probe_ell_zpair ordering.
+plot_covariance_2D: true  # whether to plot (the log10 of) the 2D covariance matrix
+
+
 
 #cl_LL_3D_path: '../input/example_cls/cl_LL_3D.npy'
 #cl_GL_3D_path: '../input/example_cls/cl_GL_3D.npy'
