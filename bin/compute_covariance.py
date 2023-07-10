@@ -31,7 +31,7 @@ EP_or_ED = cfg['EP_or_ED']
 GL_or_LG = 'GL'
 triu_tril = cfg['triu_tril']
 row_col_major = cfg['row_col_major']
-block_index = cfg['block_index']
+covariance_ordering_2D = cfg['covariance_ordering_2D']
 
 output_folder = cfg['output_folder']
 n_probes = 2
@@ -42,7 +42,6 @@ assert EP_or_ED in ('EP', 'ED'), 'EP_or_ED must be either EP or ED'
 assert GL_or_LG in ('GL', 'LG'), 'GL_or_LG must be either GL or LG'
 assert triu_tril in ('triu', 'tril'), 'triu_tril must be either "triu" or "tril"'
 assert row_col_major in ('row-major', 'col-major'), 'row_col_major must be either "row-major" or "col-major"'
-assert block_index in ('ell', 'ij'), 'block_index must be either "ell" or "ij"'
 assert isinstance(zbins, int), 'zbins must be an integer'
 assert isinstance(nbl, int), 'nbl must be an integer'
 
@@ -123,12 +122,41 @@ del cov_3x2pt_10D_dict, cov_3x2pt_10D_arr
 gc.collect()
 
 # reshape to 2D
-if not cfg['use_2DCLOE']:
+# if not cfg['use_2DCLOE']:
+#     cov_3x2pt_2D = utils.cov_4D_to_2D(cov_3x2pt_4D, block_index=block_index, optimize=True)
+# elif cfg['use_2DCLOE']:
+#     cov_3x2pt_2D = utils.cov_4D_to_2DCLOE_3x2pt(cov_3x2pt_4D, zbins, block_index='ell')
+# else:
+#     raise ValueError('use_2DCLOE must be a true or false')
+
+if covariance_ordering_2D == 'probe_ell_zpair':
+    use_2DCLOE = True
+    block_index = 'ell'
+    cov_3x2pt_2D = utils.cov_4D_to_2DCLOE_3x2pt(cov_3x2pt_4D, zbins, block_index=block_index)
+
+elif covariance_ordering_2D == 'probe_zpair_ell':
+    use_2DCLOE = True
+    block_index = 'ij'
+    cov_3x2pt_2D = utils.cov_4D_to_2DCLOE_3x2pt(cov_3x2pt_4D, zbins, block_index=block_index)
+
+elif covariance_ordering_2D == 'ell_probe_zpair':
+    use_2DCLOE = False
+    block_index = 'ell'
     cov_3x2pt_2D = utils.cov_4D_to_2D(cov_3x2pt_4D, block_index=block_index, optimize=True)
-elif cfg['use_2DCLOE']:
-    cov_3x2pt_2D = utils.cov_4D_to_2DCLOE_3x2pt(cov_3x2pt_4D, zbins, block_index='ell')
+
+elif covariance_ordering_2D == 'zpair_probe_ell':
+    use_2DCLOE = False
+    block_index = 'ij'
+    cov_3x2pt_2D = utils.cov_4D_to_2D(cov_3x2pt_4D, block_index=block_index, optimize=True)
+
 else:
-    raise ValueError('use_2DCLOE must be a true or false')
+    raise ValueError('covariance_ordering_2D must be a one of the following: probe_ell_zpair, probe_zpair_ell,'
+                     'ell_probe_zpair, zpair_probe_ell')
+
+if cfg['plot_covariance_2D']:
+    plt.matshow(np.log10(cov_3x2pt_2D))
+    plt.colorbar()
+    plt.title(f'log10(cov_3x2pt_2D)\nordering: {covariance_ordering_2D}')
 
 other_quantities_tosave = {
     'n_gal [arcmin^{-2}]': n_gal,
