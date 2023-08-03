@@ -42,8 +42,8 @@ plot_covariance_2D: true  # whether to plot (the log10 of) the 2D covariance mat
 #cl_GL_3D_path: '../input/example_cls/cl_GL_3D.npy'
 #cl_GG_3D_path: '../input/example_cls/cl_GG_3D.npy'
 cl_LL_3D_path: '../input/Cl_LL.npy'
-cl_GL_3D_path: '../input/Cl_LL.npy'
-cl_GG_3D_path: '../input/Cl_LL.npy'
+cl_GL_3D_path: '../input/Cl_GL.npy'
+cl_GG_3D_path: '../input/Cl_GG.npy'
 
 output_folder: '../output'
 
