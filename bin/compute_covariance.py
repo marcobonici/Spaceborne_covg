@@ -12,8 +12,10 @@ import utils
 
 # ! settings
 # import the yaml config file
-with open('../config/example_config.yaml', 'r') as ymlfile:
-    cfg = yaml.load(ymlfile, Loader=yaml.FullLoader)
+# with open('../config/example_config.yaml', 'r') as ymlfile:
+#     cfg = yaml.load(ymlfile, Loader=yaml.FullLoader)
+
+cfg = yaml.load(sys.stdin, Loader=yaml.FullLoader)
 
 survey_area = cfg['survey_area']  # deg^2
 deg2_in_sphere = 41252.96
