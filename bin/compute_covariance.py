@@ -12,10 +12,8 @@ import utils
 
 # ! settings
 # import the yaml config file
-# with open('../config/example_config.yaml', 'r') as ymlfile:
-#     cfg = yaml.load(ymlfile, Loader=yaml.FullLoader)
-
-cfg = yaml.load(sys.stdin, Loader=yaml.FullLoader)
+with open('../config/cfg_CLOE_MCMC.yaml', 'r') as ymlfile:
+    cfg = yaml.load(ymlfile, Loader=yaml.FullLoader)
 
 survey_area = cfg['survey_area']  # deg^2
 deg2_in_sphere = 41252.96
@@ -166,7 +164,7 @@ other_quantities_tosave = {
     'sigma_eps': sigma_eps,
 }
 
-np.save(f'{output_folder}/cov_Gauss_3x2pt_2D_{covariance_ordering_2D}.npy', cov_3x2pt_2D)
+np.save(f'{output_folder}/cov_gauss_3x2pt_2D_{covariance_ordering_2D}.npy', cov_3x2pt_2D)
 
 with open(f'{output_folder}/other_specs.txt', 'w') as file:
     file.write(json.dumps(other_quantities_tosave))
