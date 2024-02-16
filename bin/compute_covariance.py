@@ -14,6 +14,10 @@ import utils
 # import the yaml config file
 cfg = yaml.load(sys.stdin, Loader=yaml.FullLoader)
 
+# if you want to execute without passing the path
+# with open('../config/example_config.yaml', 'r') as file:
+#     cfg = yaml.safe_load(file)
+
 survey_area = cfg['survey_area']  # deg^2
 deg2_in_sphere = 41252.96
 fsky = survey_area / deg2_in_sphere

@@ -9,15 +9,15 @@ ell_max: 5000  # maximum ell for the angular power spectra
 ell_bins: 20  # number of ell bins for the angular power spectra
 
 # alternatively, one can specify the ell grid directly (set to "null" if you prefer to use ell_min, ell_max, ell_bins)
-#ell_path: '../input/ell_values.txt'  # path to txt file with the ell grid
-#delta_ell_path: '../input/delta_ell_values.txt' # path to txt file with the delta ell grid
+# ell_path: '../input/ell_values.txt'  # path to txt file with the ell grid
+# delta_ell_path: '../input/delta_ell_values.txt' # path to txt file with the delta ell grid
 ell_path: null
 delta_ell_path: null
 
 n_gal: 30  # number of galaxies per arcmin^2. This scalar must be provided for equipopulated ('EP') redshift bins
 # path to txt file with the number of galaxies per arcmin^2 for each redshift bin. #  This must be provided for
-#  equidistant ('ED') redshift bins.
-#n_gal_path: '../input/n_gal.txt'
+# equidistant ('ED') redshift bins.
+# n_gal_path: '../input/n_gal.txt'
 n_gal_path: null
 
 # intrinsic ellipticity dispersion per *component*. The total dispersion is
