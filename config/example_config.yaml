@@ -36,11 +36,7 @@ covariance_ordering_2D: 'probe_ell_zpair' # must be one of ['probe_ell_zpair', '
 # CLOE v2 needs as input the probe_ell_zpair ordering.
 plot_covariance_2D: true  # whether to plot (the log10 of) the 2D covariance matrix
 
-
-
-#cl_LL_3D_path: '../input/example_cls/cl_LL_3D.npy'
-#cl_GL_3D_path: '../input/example_cls/cl_GL_3D.npy'
-#cl_GG_3D_path: '../input/example_cls/cl_GG_3D.npy'
+# path to 3d numpy Cls
 cl_LL_3D_path: '../input/Cl_LL.npy'
 cl_GL_3D_path: '../input/Cl_GL.npy'
 cl_GG_3D_path: '../input/Cl_GG.npy'
