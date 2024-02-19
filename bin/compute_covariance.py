@@ -83,14 +83,17 @@ if cfg['ell_path'] is None and cfg['delta_ell_path'] is None:
     np.savetxt(f'{output_folder}/ell_grid.txt', ell_grid, header=ell_grid_header)
 
 else:
+    print('Loading \ell and \Delta \ell values from file')
+    
     ell_values = np.genfromtxt(cfg['ell_path'])
     delta_values = np.genfromtxt(cfg['delta_ell_path'])
-    assert len(ell_values) == nbl, 'ell_path must have a number of entries equal to ell_bins'
-    assert len(delta_values) == nbl, 'delta_ell_path must have a number of entries equal to ell_bins'
-    assert np.all(delta_values > 0), 'delta_ell_path must have strictly positive entries'
-    assert np.all(np.diff(ell_values) > 0), 'ell_path must have strictly increasing entries'
-    assert ell_values.ndim == 1, 'ell_path must be a 1D array'
-    assert delta_values.ndim == 1, 'delta_ell_path must be a 1D array'
+    nbl = len(ell_values)
+    
+    assert len(ell_values) == len(delta_values), 'ell values must have a number of entries as delta ell'
+    assert np.all(delta_values > 0), 'delta ell values must have strictly positive entries'
+    assert np.all(np.diff(ell_values) > 0), 'ell values must have strictly increasing entries'
+    assert ell_values.ndim == 1, 'ell values must be a 1D array'
+    assert delta_values.ndim == 1, 'delta ell values must be a 1D array'
 
 # ! import cls
 cl_LL_3D = np.load(f'{cfg["cl_LL_3D_path"]}')
