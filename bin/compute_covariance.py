@@ -15,7 +15,7 @@ import utils
 cfg = yaml.load(sys.stdin, Loader=yaml.FullLoader)
 
 # if you want to execute without passing the path
-# with open('../config/example_config.yaml', 'r') as file:
+# with open('../config/example_config_namaster.yaml', 'r') as file:
 #     cfg = yaml.safe_load(file)
 
 survey_area = cfg['survey_area']  # deg^2
@@ -35,6 +35,10 @@ GL_or_LG = 'GL'
 triu_tril = cfg['triu_tril']
 row_col_major = cfg['row_col_major']
 covariance_ordering_2D = cfg['covariance_ordering_2D']
+
+part_sky = cfg['part_sky']
+workspace_path = cfg['workspace_path']
+mask_path = cfg['mask_path']
 
 output_folder = cfg['output_folder']
 n_probes = 2
@@ -84,11 +88,11 @@ if cfg['ell_path'] is None and cfg['delta_ell_path'] is None:
 
 else:
     print('Loading \ell and \Delta \ell values from file')
-    
+
     ell_values = np.genfromtxt(cfg['ell_path'])
     delta_values = np.genfromtxt(cfg['delta_ell_path'])
     nbl = len(ell_values)
-    
+
     assert len(ell_values) == len(delta_values), 'ell values must have a number of entries as delta ell'
     assert np.all(delta_values > 0), 'delta ell values must have strictly positive entries'
     assert np.all(np.diff(ell_values) > 0), 'ell values must have strictly increasing entries'
@@ -99,6 +103,9 @@ else:
 cl_LL_3D = np.load(f'{cfg["cl_LL_3D_path"]}')
 cl_GL_3D = np.load(f'{cfg["cl_GL_3D_path"]}')
 cl_GG_3D = np.load(f'{cfg["cl_GG_3D_path"]}')
+#TODO check that the ell loaded or computed above matches the ell of the loaded Cl's
+# For now I just construct the 5D 3x2 Cl's from the nbl of the loaded Cl's
+nbl = cl_GG_3D.shape[0]
 
 cl_3x2pt_5D = np.zeros((n_probes, n_probes, nbl, zbins, zbins))
 cl_3x2pt_5D[0, 0, :, :, :] = cl_LL_3D
@@ -117,47 +124,54 @@ for probe_A in (0, 1):
 
 # compute 3x2pt cov
 start = time.perf_counter()
-cov_3x2pt_10D_arr = utils.covariance_einsum(cl_3x2pt_5D, noise_3x2pt_5D, fsky, ell_values, delta_values)
-print(f'covariance computation took {time.perf_counter() - start:.2f} seconds')
-
-# reshape to 4D
-cov_3x2pt_10D_dict = utils.cov_10D_array_to_dict(cov_3x2pt_10D_arr)
-cov_3x2pt_4D = utils.cov_3x2pt_dict_10D_to_4D(cov_3x2pt_10D_dict, probe_ordering, nbl, zbins, ind.copy(),
-                                              GL_or_LG)
-del cov_3x2pt_10D_dict, cov_3x2pt_10D_arr
-gc.collect()
-
-# reshape to 2D
-# if not cfg['use_2DCLOE']:
-#     cov_3x2pt_2D = utils.cov_4D_to_2D(cov_3x2pt_4D, block_index=block_index, optimize=True)
-# elif cfg['use_2DCLOE']:
-#     cov_3x2pt_2D = utils.cov_4D_to_2DCLOE_3x2pt(cov_3x2pt_4D, zbins, block_index='ell')
-# else:
-#     raise ValueError('use_2DCLOE must be a true or false')
-
-if covariance_ordering_2D == 'probe_ell_zpair':
-    use_2DCLOE = True
-    block_index = 'ell'
-    cov_3x2pt_2D = utils.cov_4D_to_2DCLOE_3x2pt(cov_3x2pt_4D, zbins, block_index=block_index)
-
-elif covariance_ordering_2D == 'probe_zpair_ell':
-    use_2DCLOE = True
-    block_index = 'ij'
-    cov_3x2pt_2D = utils.cov_4D_to_2DCLOE_3x2pt(cov_3x2pt_4D, zbins, block_index=block_index)
-
-elif covariance_ordering_2D == 'ell_probe_zpair':
-    use_2DCLOE = False
-    block_index = 'ell'
-    cov_3x2pt_2D = utils.cov_4D_to_2D(cov_3x2pt_4D, block_index=block_index, optimize=True)
-
-elif covariance_ordering_2D == 'zpair_probe_ell':
-    use_2DCLOE = False
-    block_index = 'ij'
-    cov_3x2pt_2D = utils.cov_4D_to_2D(cov_3x2pt_4D, block_index=block_index, optimize=True)
+if part_sky:
+    print('Computing the partial-sky covariance with NaMaster')
+    cov_3x2pt_2D = utils.covariance_nmt(cl_3x2pt_5D, noise_3x2pt_5D, workspace_path, mask_path)
+    print(f'covariance computation took {time.perf_counter() - start:.2f} seconds')
 
 else:
-    raise ValueError('covariance_ordering_2D must be a one of the following: probe_ell_zpair, probe_zpair_ell,'
-                     'ell_probe_zpair, zpair_probe_ell')
+    print('Computing the full-sky covariance divided by f_sky')
+    cov_3x2pt_10D_arr = utils.covariance_einsum(cl_3x2pt_5D, noise_3x2pt_5D, fsky, ell_values, delta_values)
+    print(f'covariance computation took {time.perf_counter() - start:.2f} seconds')
+
+    # reshape to 4D
+    cov_3x2pt_10D_dict = utils.cov_10D_array_to_dict(cov_3x2pt_10D_arr)
+    cov_3x2pt_4D = utils.cov_3x2pt_dict_10D_to_4D(cov_3x2pt_10D_dict, probe_ordering, nbl, zbins, ind.copy(),
+                                                GL_or_LG)
+    del cov_3x2pt_10D_dict, cov_3x2pt_10D_arr
+    gc.collect()
+
+    # reshape to 2D
+    # if not cfg['use_2DCLOE']:
+    #     cov_3x2pt_2D = utils.cov_4D_to_2D(cov_3x2pt_4D, block_index=block_index, optimize=True)
+    # elif cfg['use_2DCLOE']:
+    #     cov_3x2pt_2D = utils.cov_4D_to_2DCLOE_3x2pt(cov_3x2pt_4D, zbins, block_index='ell')
+    # else:
+    #     raise ValueError('use_2DCLOE must be a true or false')
+
+    if covariance_ordering_2D == 'probe_ell_zpair':
+        use_2DCLOE = True
+        block_index = 'ell'
+        cov_3x2pt_2D = utils.cov_4D_to_2DCLOE_3x2pt(cov_3x2pt_4D, zbins, block_index=block_index)
+
+    elif covariance_ordering_2D == 'probe_zpair_ell':
+        use_2DCLOE = True
+        block_index = 'ij'
+        cov_3x2pt_2D = utils.cov_4D_to_2DCLOE_3x2pt(cov_3x2pt_4D, zbins, block_index=block_index)
+
+    elif covariance_ordering_2D == 'ell_probe_zpair':
+        use_2DCLOE = False
+        block_index = 'ell'
+        cov_3x2pt_2D = utils.cov_4D_to_2D(cov_3x2pt_4D, block_index=block_index, optimize=True)
+
+    elif covariance_ordering_2D == 'zpair_probe_ell':
+        use_2DCLOE = False
+        block_index = 'ij'
+        cov_3x2pt_2D = utils.cov_4D_to_2D(cov_3x2pt_4D, block_index=block_index, optimize=True)
+
+    else:
+        raise ValueError('covariance_ordering_2D must be a one of the following: probe_ell_zpair, probe_zpair_ell,'
+                        'ell_probe_zpair, zpair_probe_ell')
 
 if cfg['plot_covariance_2D']:
     plt.matshow(np.log10(cov_3x2pt_2D))

@@ -1,13 +1,12 @@
-import bz2
-import sys
 import warnings
-from pathlib import Path
-import matplotlib.pyplot as plt
 import numpy as np
 from scipy.interpolate import interp1d
-import pickle
 import itertools
 import os
+import time
+
+import pymaster as nmt
+import healpy as hp
 
 
 ###############################################################################
@@ -80,7 +79,7 @@ def get_zpairs(zbins):
 
 
 ###############################################################################
-#################### COVARIANCE MATRIX COMPUTATION ############################ 
+#################### COVARIANCE MATRIX COMPUTATION ############################
 ###############################################################################
 # TODO unify these 3 into a single function
 # TODO workaround for start_index, stop_index (super easy)
@@ -157,6 +156,238 @@ def covariance_einsum(cl_5d, noise_5d, f_sky, ell_values, delta_ell, return_only
 
     return cov_10d
 
+def covariance_nmt(cl_5d, noise_5d, workspace_path, mask_path):
+    """
+    computes the 10-dimensional covariance matrix, of shape
+    (n_probes, n_probes, n_probes, n_probes, nbl, (nbl), zbins, zbins, zbins, zbins). The 5-th axis is added only if
+    return_only_diagonal_ells is True. *for the single-probe case, n_probes = 1*
+
+    In np.einsum, the indices have the following meaning:
+        A, B, C, D = probe identifier. 0 for WL, 1 for GCph
+        L, M = ell, ell_prime
+        i, j, k, l = redshift bin indices
+
+    cl_5d must have shape = (n_probes, n_probes, nbl, zbins, zbins) = (A, B, L, i, j), same as noise_5d
+
+    :param cl_5d:
+    :param noise_5d:
+    :param f_sky:
+    :param ell_values:
+    :param delta_ell:
+    :param return_only_diagonal_ells:
+    :return: 10-dimensional numpy array of shape
+    (n_probes, n_probes, n_probes, n_probes, nbl, (nbl), zbins, zbins, zbins, zbins), containing the covariance.
+
+    """
+    assert cl_5d.shape[0] == 1 or cl_5d.shape[0] == 2, 'This funcion only works with 1 or two probes'
+    assert cl_5d.shape[0] == cl_5d.shape[1], 'cl_5d must be an array of shape (n_probes, n_probes, nbl, zbins, zbins)'
+    assert cl_5d.shape[-1] == cl_5d.shape[-2], 'cl_5d must be an array of shape (n_probes, n_probes, nbl, zbins, zbins)'
+    assert noise_5d.shape == cl_5d.shape, 'noise_5d must have shape the same shape as cl_5d, although there ' \
+                                          'is no ell dependence'
+
+    # Transform array Cl's and noise to dictionnary to ease the loop over probes
+    cl_dic, keys =  Cl5D_to_ClDic(cl_5d)
+    noise_dic, keys =  Cl5D_to_ClDic(noise_5d)
+
+    # Get symetric Cls for permutations in the covariance loop
+    for key in keys:
+        probeA, probeB = key.split('-')
+        cl_dic['-'.join([probeB, probeA])] = cl_dic[key]
+        noise_dic['-'.join([probeB, probeA])] = noise_dic[key]
+
+    # Get the mask and make it a field
+    print('Get mask')
+    mask = hp.read_map(mask_path)
+    fmask = nmt.NmtField(mask, [mask])
+
+    # Get the workspace
+    print('Get workspace')
+    workspace = nmt.NmtWorkspace()
+    workspace.read_from(workspace_path)
+    nbl = workspace.get_bandpower_windows().shape[1]
+
+    # Initialise covariance workspace
+    print('Initialise covariance workspace')
+    cov_workspace = nmt.NmtCovarianceWorkspace()
+    cov_workspace.compute_coupling_coefficients(fmask, fmask)
+
+    # Initialise the covariance matrix
+    ncl = len(keys)
+    covmat = np.zeros((int(ncl*nbl), int(ncl*nbl)))
+
+    # Covariance computation loop
+    print('Start loop')
+    for (idx1, key1), (idx2, key2) in itertools.combinations_with_replacement(enumerate(keys), 2):
+        probeA, probeB = key1.split('-')
+        probeC, probeD = key2.split('-')
+
+        covmat[idx1*nbl:(idx1+1)*nbl, idx2*nbl:(idx2+1)*nbl] =\
+            nmt.gaussian_covariance(cov_workspace, 0, 0, 0, 0, # Spins of the 4 fields
+                                    [cl_dic['-'.join([probeA, probeC])] +\
+                                    noise_dic['-'.join([probeA, probeC])]],
+                                    [cl_dic['-'.join([probeB, probeC])] +\
+                                    noise_dic['-'.join([probeB, probeC])]],
+                                    [cl_dic['-'.join([probeA, probeD])] +\
+                                    noise_dic['-'.join([probeA, probeD])]],
+                                    [cl_dic['-'.join([probeB, probeD])] +\
+                                    noise_dic['-'.join([probeB, probeD])]],
+                                    workspace, wb=workspace)
+
+    # Symmetric of the matrix
+    covmat = covmat + covmat.T - np.diag(covmat.diagonal())
+
+    #TODO transform 2D matrix to 10D so that it can enter ordering transformation functions.
+    # For now the ordering is probe_zpair_ell
+
+    return covmat
+
+def Cl5D_to_ClDic(cl_5d):
+    """
+    Transform a 5D Cl array to a dictionary with different probes as keys.
+
+    Parameters:
+    cl_5d (ndarray): 5D array of Cl data. The dimensions should be arranged as follows: (n_l, n_cls, n_cls, n_bins, n_bins), where:
+                      - n_l: Number of angular multipoles.
+                      - n_cls: Number of Cl spectra (e.g., auto or cross spectra).
+                      - n_bins: Number of bins or redshift slices.
+
+    Returns:
+    dict: Dictionary with keys representing different probes and values as Cl data.
+         The keys are formatted as 'XY-i-j', where 'XY' represents the probe type ('GC', 'WL', or 'GGL'),
+         and 'i', 'j' represent the bin indices.
+    list: List of keys in the dictionary.
+    """
+    nbz = cl_5d.shape[3]  # Number of bins or redshift slices
+    indices = range(nbz)
+
+    # Define iteration schemes for different probes
+    iter_probe = {'GC': itertools.combinations_with_replacement(indices, 2),
+                  'WL': itertools.combinations_with_replacement(indices, 2),
+                  'GGL': itertools.product(indices, repeat=2)}
+
+    # Mapping between probe type and key format
+    keymap = {'GC': ('D', 'D'),
+              'WL': ('G', 'G'),
+              'GGL': ('D', 'G')}
+
+    # Mapping between probe type and indices for accessing the Cl data
+    keymap_davide = {'GC': (1, 1),
+                     'WL': (0, 0),
+                     'GGL': (0, 1)}
+
+    # Create the dictionary and the list of keys using dictionary comprehension and list comprehension
+    dic = {}
+    for probe in ['WL', 'GGL', 'GC']:
+        for i, j in iter_probe[probe]:
+            k = '{}{}-{}{}'.format(keymap[probe][0], i, keymap[probe][1], j)
+            if probe == 'GGL':
+                dic[k] = cl_5d[keymap_davide[probe][0], keymap_davide[probe][1], :, j, i]
+            else :
+                dic[k] = cl_5d[keymap_davide[probe][0], keymap_davide[probe][1], :, i, j]
+    keys = list(dic.keys())
+
+    return dic, keys
+
+def linear_lmin_binning(NSIDE, lmin, bw):
+    """
+    Generate a linear binning scheme based on a minimum multipole 'lmin' and bin width 'bw'.
+
+    Parameters:
+    -----------
+    NSIDE : int
+        The NSIDE parameter of the HEALPix grid.
+
+    lmin : int
+        The minimum multipole to start the binning.
+
+    bw : int
+        The bin width, i.e., the number of multipoles in each bin.
+
+    Returns:
+    --------
+    nmt_bins
+        A binning scheme object defining linearly spaced bins starting from 'lmin' with
+        a width of 'bw' multipoles.
+
+    Notes:
+    ------
+    This function generates a binning scheme for the pseudo-Cl power spectrum estimation
+    using the Namaster library. It divides the multipole range from 'lmin' to 2*NSIDE
+    into bins of width 'bw'.
+
+    Example:
+    --------
+    # Generate a linear binning scheme for an NSIDE of 64, starting from l=10, with bin width of 20
+    bin_scheme = linear_lmin_binning(NSIDE=64, lmin=10, bw=20)
+    """
+    lmax = 2*NSIDE
+    nbl = (lmax-lmin)//bw + 1
+    elli = np.zeros(nbl, int)
+    elle = np.zeros(nbl, int)
+
+    for i in range(nbl):
+        elli[i] = lmin + i*bw
+        elle[i] = lmin + (i+1)*bw
+
+    b = nmt.NmtBin.from_edges(elli, elle)
+    return b
+
+def coupling_matrix(bin_scheme, mask, wkspce_name):
+    """
+    Compute the mixing matrix for coupling spherical harmonic modes using
+    the provided binning scheme and mask.
+
+    Parameters:
+    -----------
+    bin_scheme : nmt_bins
+        A binning scheme object defining the bins for the coupling matrix.
+
+    mask : nmt_field
+        A mask object defining the regions of the sky to include in the computation.
+
+    wkspce_name : str
+        The file name for storing or retrieving the computed workspace containing
+        the coupling matrix.
+
+    Returns:
+    --------
+    nmt_workspace
+        A workspace object containing the computed coupling matrix.
+
+    Notes:
+    ------
+    This function computes the coupling matrix necessary for the pseudo-Cl power
+    spectrum estimation using the NmtField and NmtWorkspace objects from the
+    Namaster library.
+
+    If the workspace file specified by 'wkspce_name' exists, the function reads
+    the coupling matrix from the file. Otherwise, it computes the matrix and
+    writes it to the file.
+
+    Example:
+    --------
+    # Generate a linear binning scheme for an NSIDE of 64, starting from l=10, with bin width of 20
+    bin_scheme = linear_lmin_binning(NSIDE=64, lmin=10, bw=20)
+
+    # Define the mask
+    mask = nmt.NmtField(mask, [mask])
+
+    # Compute the coupling matrix and store it in 'coupling_matrix.bin'
+    coupling_matrix = coupling_matrix(bin_scheme, mask, 'coupling_matrix.bin')
+    """
+    print('Compute the mixing matrix')
+    start = time.time()
+    fmask = nmt.NmtField(mask, [mask]) # nmt field with only the mask
+    w = nmt.NmtWorkspace()
+    if os.path.isfile(wkspce_name):
+        print('Mixing matrix has already been calculated and is in the workspace file : ', wkspce_name, '. Read it.')
+        w.read_from(wkspce_name)
+    else :
+        print('The file : ', wkspce_name, ' does not exists. Calculating the mixing matrix and writing it.')
+        w.compute_coupling_matrix(fmask, fmask, bin_scheme)
+        w.write_to(wkspce_name)
+    print('Done computing the mixing matrix. It took ', time.time()-start, 's.')
+    return w
 
 def cov_10D_dict_to_array(cov_10D_dict, nbl, zbins, n_probes=2):
     """ transforms a dictionary of "shape" [(A, B, C, D)][nbl, nbl, zbins, zbins, zbins, zbins] (where A, B, C, D is a
@@ -298,15 +529,15 @@ def cov_SS_3x2pt_10D_dict_nofsky_old(nbl, cl_3x2pt, Sijkl, zbins, response_3x2pt
 
 def cov_G_10D_dict(cl_dict, noise_dict, nbl, zbins, l_lin, delta_l, fsky, probe_ordering):
     """
-    A universal 6D covmat function, which mixes the indices automatically. 
-    This one works with dictionaries, in particular for the cls and noise arrays. 
+    A universal 6D covmat function, which mixes the indices automatically.
+    This one works with dictionaries, in particular for the cls and noise arrays.
     probe_ordering = ['L', 'L'] or ['G', 'G'] for the individual probes, and
     probe_ordering = [['L', 'L'], ['L', 'G'], ['G', 'G']] (or variations)
     for the 3x2pt case.
     Note that, adding together the different datavectors, cov_3x2pt_6D needs
     probe indices, becoming 10D (maybe a (nbl, nbl, 3*zbins, 3*zbins, 3*zbins, 3*zbins))
     shape would work? Anyway, much less convenient to work with.
-    
+
     This version is faster, it is a wrapper function for covariance_6D_blocks,
     which makes use of jit
     """
@@ -389,7 +620,7 @@ def cov_SS_6D_blocks(Rl_AB, Cl_AB, Rl_CD, Cl_CD, Sijkl_ABCD, nbl, zbins, fsky):
 def cov_3x2pt_dict_10D_to_4D(cov_3x2pt_dict_10D, probe_ordering, nbl, zbins, ind_copy, GL_or_LG):
     """
     Takes the cov_3x2pt_10D dictionary, reshapes each A, B, C, D block separately
-    in 4D, then stacks the blocks in the right order to output cov_3x2pt_4D 
+    in 4D, then stacks the blocks in the right order to output cov_3x2pt_4D
     (which is not a dictionary but a numpy array)
 
     probe_ordering: e.g. ['L', 'L'], ['G', 'L'], ['G', 'G']]
@@ -398,7 +629,7 @@ def cov_3x2pt_dict_10D_to_4D(cov_3x2pt_dict_10D, probe_ordering, nbl, zbins, ind
     ind_copy = ind_copy.copy()  # just to ensure the input ind file is not changed
 
     # Check that the cross-correlation is coherent with the probe_ordering list
-    # this is a weak check, since I'm assuming that GL or LG will be the second 
+    # this is a weak check, since I'm assuming that GL or LG will be the second
     # element of the datavector
     if GL_or_LG == 'GL':
         assert probe_ordering[1][0] == 'G' and probe_ordering[1][1] == 'L', \
@@ -423,7 +654,7 @@ def cov_3x2pt_dict_10D_to_4D(cov_3x2pt_dict_10D, probe_ordering, nbl, zbins, ind
         ind_dict['L', 'G'] = ind_dict['G', 'L'].copy()  # copy and switch columns
         ind_dict['L', 'G'][:, [2, 3]] = ind_dict['L', 'G'][:, [3, 2]]
 
-    # construct the npairs dict 
+    # construct the npairs dict
     npairs_dict = {}
     npairs_dict['L', 'L'] = npairs_auto
     npairs_dict['L', 'G'] = npairs_cross
@@ -434,7 +665,7 @@ def cov_3x2pt_dict_10D_to_4D(cov_3x2pt_dict_10D, probe_ordering, nbl, zbins, ind
     cov_3x2pt_dict_4D = {}
     combinations = []
 
-    # make each block 4D and store it with the right 'A', 'B', 'C, 'D' key 
+    # make each block 4D and store it with the right 'A', 'B', 'C, 'D' key
     for A, B in probe_ordering:
         for C, D in probe_ordering:
             combinations.append([A, B, C, D])
@@ -471,9 +702,9 @@ def symmetrize_ij(cov_6D, zbins):
 
 # ! this function is new - still to be thouroughly tested
 def cov_4D_to_6D(cov_4D, nbl, zbins, probe, ind):
-    """transform the cov from shape (nbl, nbl, npairs, npairs) 
+    """transform the cov from shape (nbl, nbl, npairs, npairs)
     to (nbl, nbl, zbins, zbins, zbins, zbins). Not valid for 3x2pt, the total
-    shape of the matrix is (nbl, nbl, zbins, zbins, zbins, zbins), not big 
+    shape of the matrix is (nbl, nbl, zbins, zbins, zbins, zbins), not big
     enough to store 3 probes. Use cov_4D functions or cov_6D as a dictionary
     instead,
     """
@@ -509,9 +740,9 @@ def cov_4D_to_6D(cov_4D, nbl, zbins, probe, ind):
     return cov_6D
 
 
-# 
+#
 def cov_6D_to_4D(cov_6D, nbl, zpairs, ind):
-    """transform the cov from shape (nbl, nbl, zbins, zbins, zbins, zbins) 
+    """transform the cov from shape (nbl, nbl, zbins, zbins, zbins, zbins)
     to (nbl, nbl, zpairs, zpairs)"""
     assert ind.shape[0] == zpairs, "ind.shape[0] != zpairs: maybe you're passing the whole ind file " \
                                    "instead of ind[:zpairs, :] - or similia"
@@ -526,7 +757,7 @@ def cov_6D_to_4D(cov_6D, nbl, zpairs, ind):
 
 def cov_6D_to_4D_blocks(cov_6D, nbl, npairs_AB, npairs_CD, ind_AB, ind_CD):
     """ reshapes the covariance even for the non-diagonal (hence, non-square) blocks needed to build the 3x2pt.
-    use npairs_AB = npairs_CD and ind_AB = ind_CD for the normal routine (valid for auto-covariance 
+    use npairs_AB = npairs_CD and ind_AB = ind_CD for the normal routine (valid for auto-covariance
     LL-LL, GG-GG, GL-GL and LG-LG). n_columns is used to determine whether the ind array has 2 or 4 columns
     (if it's given in the form of a dictionary or not)
     """
@@ -555,7 +786,7 @@ def return_combinations(A, B, C, D):
 
 
 ###########################
-# 
+#
 def check_symmetric(array_2d, exact, rtol=1e-05):
     """
     :param a: 2d array
@@ -788,7 +1019,7 @@ def cov_2DCLOE_to_4D_3x2pt(cov_2D, nbl, zbins, block_index='vincenzo'):
 
 
 def correlation_from_covariance(covariance):
-    """ not thoroughly tested. Taken from 
+    """ not thoroughly tested. Taken from
     https://gist.github.com/wiso/ce2a9919ded228838703c1c7c7dad13b
     does NOT work with 3x2pt
     """
