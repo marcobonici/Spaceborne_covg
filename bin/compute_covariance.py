@@ -19,7 +19,7 @@ cfg = yaml.load(sys.stdin, Loader=yaml.FullLoader)
 #     cfg = yaml.safe_load(file)
 
 survey_area = cfg['survey_area']  # deg^2
-deg2_in_sphere = 41252.96
+deg2_in_sphere = 41252.96125
 fsky = survey_area / deg2_in_sphere
 
 zbins = cfg['zbins']
