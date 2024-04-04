@@ -49,7 +49,7 @@ def generate_ind(triu_tril_square, row_col_major, size):
 
 def build_full_ind(triu_tril, row_col_major, size):
     """
-    Builds the good old ind file
+    Builds index array mapping the redshift indices zi, zj into the index of the independent redshift pairs, for all probes
     """
 
     assert triu_tril in ['triu', 'tril'], 'triu_tril must be either "triu" or "tril"'
