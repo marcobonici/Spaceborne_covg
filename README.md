@@ -12,13 +12,14 @@ $$
 where $A$, $B$, $A'$ and $B'$ run over the photometric observables
 
 ## Partial-sky with NaMaster
-This computation makes use of the Python wrapper of the NaMaster library, [pymaster](https://namaster.readthedocs.io/en/latest/). The inputs necessary to the partial-sky computation are :
+This computation makes use of the Python wrapper of the NaMaster library, [pymaster](https://namaster.readthedocs.io/en/latest/). The inputs necessary to the partial-sky computation are:
 - The unbinned $C(\ell)$'s
 - The survey mask (a healpix map)
 - The NaMaster workspace object corresponding to the mask and a specific binning scheme
+
 We provide an example script to compute and save a NaMaster workspace object in the scripts folder.
 
-See the `config/example_config.yaml` file for a detailed description of the inputs required. You can download the examples unbinned $C(\ell)$'s and a toy full-sky low resolution mask necessary to the computation of the partial-sky covariance [here](https://drive.google.com/drive/folders/1LVglqIs7btZEb_0M7HCi3MM8UPryIIHG?usp=sharing)
+See the `config/example_config.yaml` file for a detailed description of the inputs required. You can download the examples unbinned $C(\ell)$'s and a toy full-sky low-resolution mask necessary for the computation of the partial-sky covariance [here](https://drive.google.com/drive/folders/1LVglqIs7btZEb_0M7HCi3MM8UPryIIHG?usp=sharing)
 
 You can run the script with
 
