@@ -80,7 +80,7 @@ def get_zpairs(zbins):
 
 
 ###############################################################################
-#################### COVARIANCE MATRIX COMPUTATION ############################ 
+#################### COVARIANCE MATRIX COMPUTATION ############################
 ###############################################################################
 # TODO unify these 3 into a single function
 # TODO workaround for start_index, stop_index (super easy)
@@ -240,9 +240,9 @@ def build_Sijkl_dict(Sijkl, zbins):
                 for probe_D in ['L', 'G']:
                     Sijkl_dict[probe_A, probe_B, probe_C, probe_D] = \
                         Sijkl[probe_lookup[probe_A]['start']:probe_lookup[probe_A]['stop'],
-                        probe_lookup[probe_B]['start']:probe_lookup[probe_B]['stop'],
-                        probe_lookup[probe_C]['start']:probe_lookup[probe_C]['stop'],
-                        probe_lookup[probe_D]['start']:probe_lookup[probe_D]['stop']]
+                              probe_lookup[probe_B]['start']:probe_lookup[probe_B]['stop'],
+                              probe_lookup[probe_C]['start']:probe_lookup[probe_C]['stop'],
+                              probe_lookup[probe_D]['start']:probe_lookup[probe_D]['stop']]
 
     return Sijkl_dict
 
@@ -306,7 +306,7 @@ def cov_G_10D_dict(cl_dict, noise_dict, nbl, zbins, l_lin, delta_l, fsky, probe_
     Note that, adding together the different datavectors, cov_3x2pt_6D needs
     probe indices, becoming 10D (maybe a (nbl, nbl, 3*zbins, 3*zbins, 3*zbins, 3*zbins))
     shape would work? Anyway, much less convenient to work with.
-    
+
     This version is faster, it is a wrapper function for covariance_6D_blocks,
     which makes use of jit
     """
@@ -398,7 +398,7 @@ def cov_3x2pt_dict_10D_to_4D(cov_3x2pt_dict_10D, probe_ordering, nbl, zbins, ind
     ind_copy = ind_copy.copy()  # just to ensure the input ind file is not changed
 
     # Check that the cross-correlation is coherent with the probe_ordering list
-    # this is a weak check, since I'm assuming that GL or LG will be the second 
+    # this is a weak check, since I'm assuming that GL or LG will be the second
     # element of the datavector
     if GL_or_LG == 'GL':
         assert probe_ordering[1][0] == 'G' and probe_ordering[1][1] == 'L', \
@@ -423,7 +423,7 @@ def cov_3x2pt_dict_10D_to_4D(cov_3x2pt_dict_10D, probe_ordering, nbl, zbins, ind
         ind_dict['L', 'G'] = ind_dict['G', 'L'].copy()  # copy and switch columns
         ind_dict['L', 'G'][:, [2, 3]] = ind_dict['L', 'G'][:, [3, 2]]
 
-    # construct the npairs dict 
+    # construct the npairs dict
     npairs_dict = {}
     npairs_dict['L', 'L'] = npairs_auto
     npairs_dict['L', 'G'] = npairs_cross
@@ -434,7 +434,7 @@ def cov_3x2pt_dict_10D_to_4D(cov_3x2pt_dict_10D, probe_ordering, nbl, zbins, ind
     cov_3x2pt_dict_4D = {}
     combinations = []
 
-    # make each block 4D and store it with the right 'A', 'B', 'C, 'D' key 
+    # make each block 4D and store it with the right 'A', 'B', 'C, 'D' key
     for A, B in probe_ordering:
         for C, D in probe_ordering:
             combinations.append([A, B, C, D])
@@ -509,7 +509,7 @@ def cov_4D_to_6D(cov_4D, nbl, zbins, probe, ind):
     return cov_6D
 
 
-# 
+#
 def cov_6D_to_4D(cov_6D, nbl, zpairs, ind):
     """transform the cov from shape (nbl, nbl, zbins, zbins, zbins, zbins) 
     to (nbl, nbl, zpairs, zpairs)"""
@@ -555,7 +555,7 @@ def return_combinations(A, B, C, D):
 
 
 ###########################
-# 
+#
 def check_symmetric(array_2d, exact, rtol=1e-05):
     """
     :param a: 2d array
@@ -803,7 +803,7 @@ def correlation_from_covariance(covariance):
 
 
 ## build the noise matrices ##
-def build_noise(zbins, nProbes, sigma_eps2, ng, EP_or_ED='EP'):
+def build_noise(zbins, nProbes, sigma_eps2, ng_shear, ng_clust, EP_or_ED='EP'):
     """
     function to build the noise power spectra.
     ng = number of galaxies per arcmin^2 (constant, = 30 in IST:F 2020)
@@ -811,35 +811,43 @@ def build_noise(zbins, nProbes, sigma_eps2, ng, EP_or_ED='EP'):
     """
     conversion_factor = 11818102.860035626  # deg to arcmin^2
 
+    assert isinstance(ng_shear, (int, float, np.ndarray)), 'ng_shear should be int, float or an array'
+    assert isinstance(ng_clust, (int, float, np.ndarray)), 'ng_shear should be int, float or an array'
+    # this may be relaxed in the future...
+    assert type(ng_shear) == type(ng_clust), 'ng_shear and ng_clust should be the same type)'
+
     # if ng is a number, n_bar will be ng/zbins and the bins have to be equipopulated
-    if type(ng) == int or type(ng) == float:
-        assert ng > 0, 'ng should be positive'
+    if np.isscalar(ng_shear) and np.isscalar(ng_clust):
+        assert ng_shear > 0, 'ng_shear should be positive'
+        assert ng_clust > 0, 'ng_clust should be positive'
         assert EP_or_ED == 'EP', 'if ng is a scalar (not a vector), the bins should be equipopulated'
         # assert ng > 20, 'ng should roughly be > 20 (this check is meant to make sure that ng is the cumulative galaxy ' \
         #                 'density, not the galaxy density in each bin)'
-        n_bar = ng / zbins * conversion_factor
+        n_bar_shear = ng_shear / zbins * conversion_factor
+        n_bar_clust = ng_clust / zbins * conversion_factor
 
     # if ng is an array, n_bar == ng (this is a slight minomer, since ng is the cumulative galaxy density, while
     # n_bar the galaxy density in each bin). In this case, if the bins are quipopulated, the n_bar array should
     # have all entries almost identical.
-    elif type(ng) == np.ndarray:
-        assert np.all(ng > 0), 'ng should be positive'
-        assert np.sum(ng) > 20, 'ng should roughly be > 20'
-        if EP_or_ED == 'EP':
-            assert np.allclose(np.ones_like(ng) * ng[0], ng, rtol=0.05,
-                               atol=0), 'if ng is a vector and the bins are equipopulated, ' \
-                                        'the value in each bin should be the same (or very similar)'
-        n_bar = ng * conversion_factor
-
     else:
-        raise ValueError('ng must be an int, float or numpy.ndarray')
+        assert np.all(ng_shear > 0), 'ng_shear should be positive'
+        # assert np.sum(ng_shear) > 20, 'ng should roughly be > 20 (this check is meant to make sure that ng is the cumulative galaxy ' \
+        #                 'density, not the galaxy density in each bin)'
+        if EP_or_ED == 'EP':
+            assert np.allclose(np.ones_like(ng_shear) * ng_shear[0], ng_shear, rtol=0.05,
+                               atol=0), 'if ng_shear is a vector and the bins are equipopulated, ' \
+                                        'the value in each bin should be the same (or very similar)'
+
+        n_bar_shear = ng_shear * conversion_factor
+        n_bar_clust = ng_clust * conversion_factor
 
     # create and fill N
     N = np.zeros((nProbes, nProbes, zbins, zbins))
-    np.fill_diagonal(N[0, 0, :, :], sigma_eps2 / n_bar)
-    np.fill_diagonal(N[1, 1, :, :], 1 / n_bar)
+    np.fill_diagonal(N[0, 0, :, :], sigma_eps2 / n_bar_shear)
+    np.fill_diagonal(N[1, 1, :, :], 1 / n_bar_clust)
     N[0, 1, :, :] = 0
     N[1, 0, :, :] = 0
+
     return N
 
 
