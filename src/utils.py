@@ -48,7 +48,7 @@ def generate_ind(triu_tril_square, row_col_major, size):
 
 def build_full_ind(triu_tril, row_col_major, size):
     """
-    Builds the good old ind file
+    Builds index array mapping the redshift indices zi, zj into the index of the independent redshift pairs, for all probes
     """
 
     assert triu_tril in ['triu', 'tril'], 'triu_tril must be either "triu" or "tril"'
@@ -471,9 +471,9 @@ def build_Sijkl_dict(Sijkl, zbins):
                 for probe_D in ['L', 'G']:
                     Sijkl_dict[probe_A, probe_B, probe_C, probe_D] = \
                         Sijkl[probe_lookup[probe_A]['start']:probe_lookup[probe_A]['stop'],
-                        probe_lookup[probe_B]['start']:probe_lookup[probe_B]['stop'],
-                        probe_lookup[probe_C]['start']:probe_lookup[probe_C]['stop'],
-                        probe_lookup[probe_D]['start']:probe_lookup[probe_D]['stop']]
+                              probe_lookup[probe_B]['start']:probe_lookup[probe_B]['stop'],
+                              probe_lookup[probe_C]['start']:probe_lookup[probe_C]['stop'],
+                              probe_lookup[probe_D]['start']:probe_lookup[probe_D]['stop']]
 
     return Sijkl_dict
 
@@ -1034,7 +1034,7 @@ def correlation_from_covariance(covariance):
 
 
 ## build the noise matrices ##
-def build_noise(zbins, nProbes, sigma_eps2, ng, EP_or_ED='EP'):
+def build_noise(zbins, nProbes, sigma_eps2, ng_shear, ng_clust, EP_or_ED='EP'):
     """
     function to build the noise power spectra.
     ng = number of galaxies per arcmin^2 (constant, = 30 in IST:F 2020)
@@ -1042,35 +1042,43 @@ def build_noise(zbins, nProbes, sigma_eps2, ng, EP_or_ED='EP'):
     """
     conversion_factor = 11818102.860035626  # deg to arcmin^2
 
+    assert isinstance(ng_shear, (int, float, np.ndarray)), 'ng_shear should be int, float or an array'
+    assert isinstance(ng_clust, (int, float, np.ndarray)), 'ng_shear should be int, float or an array'
+    # this may be relaxed in the future...
+    assert type(ng_shear) == type(ng_clust), 'ng_shear and ng_clust should be the same type)'
+
     # if ng is a number, n_bar will be ng/zbins and the bins have to be equipopulated
-    if type(ng) == int or type(ng) == float:
-        assert ng > 0, 'ng should be positive'
+    if np.isscalar(ng_shear) and np.isscalar(ng_clust):
+        assert ng_shear > 0, 'ng_shear should be positive'
+        assert ng_clust > 0, 'ng_clust should be positive'
         assert EP_or_ED == 'EP', 'if ng is a scalar (not a vector), the bins should be equipopulated'
         # assert ng > 20, 'ng should roughly be > 20 (this check is meant to make sure that ng is the cumulative galaxy ' \
         #                 'density, not the galaxy density in each bin)'
-        n_bar = ng / zbins * conversion_factor
+        n_bar_shear = ng_shear / zbins * conversion_factor
+        n_bar_clust = ng_clust / zbins * conversion_factor
 
     # if ng is an array, n_bar == ng (this is a slight minomer, since ng is the cumulative galaxy density, while
     # n_bar the galaxy density in each bin). In this case, if the bins are quipopulated, the n_bar array should
     # have all entries almost identical.
-    elif type(ng) == np.ndarray:
-        assert np.all(ng > 0), 'ng should be positive'
-        assert np.sum(ng) > 20, 'ng should roughly be > 20'
-        if EP_or_ED == 'EP':
-            assert np.allclose(np.ones_like(ng) * ng[0], ng, rtol=0.05,
-                               atol=0), 'if ng is a vector and the bins are equipopulated, ' \
-                                        'the value in each bin should be the same (or very similar)'
-        n_bar = ng * conversion_factor
-
     else:
-        raise ValueError('ng must be an int, float or numpy.ndarray')
+        assert np.all(ng_shear > 0), 'ng_shear should be positive'
+        # assert np.sum(ng_shear) > 20, 'ng should roughly be > 20 (this check is meant to make sure that ng is the cumulative galaxy ' \
+        #                 'density, not the galaxy density in each bin)'
+        if EP_or_ED == 'EP':
+            assert np.allclose(np.ones_like(ng_shear) * ng_shear[0], ng_shear, rtol=0.05,
+                               atol=0), 'if ng_shear is a vector and the bins are equipopulated, ' \
+                                        'the value in each bin should be the same (or very similar)'
+
+        n_bar_shear = ng_shear * conversion_factor
+        n_bar_clust = ng_clust * conversion_factor
 
     # create and fill N
     N = np.zeros((nProbes, nProbes, zbins, zbins))
-    np.fill_diagonal(N[0, 0, :, :], sigma_eps2 / n_bar)
-    np.fill_diagonal(N[1, 1, :, :], 1 / n_bar)
+    np.fill_diagonal(N[0, 0, :, :], sigma_eps2 / n_bar_shear)
+    np.fill_diagonal(N[1, 1, :, :], 1 / n_bar_clust)
     N[0, 1, :, :] = 0
     N[1, 0, :, :] = 0
+
     return N
 
 
