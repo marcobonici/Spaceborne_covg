@@ -2,12 +2,10 @@ import gc
 import json
 import sys
 import time
-
 import matplotlib.pyplot as plt
 import numpy as np
 import yaml
 
-sys.path.append('../lib')
 import utils
 
 # ! settings
@@ -19,7 +17,7 @@ cfg = yaml.load(sys.stdin, Loader=yaml.FullLoader)
 #     cfg = yaml.safe_load(file)
 
 survey_area = cfg['survey_area']  # deg^2
-deg2_in_sphere = 41252.96
+deg2_in_sphere = 41252.96125
 fsky = survey_area / deg2_in_sphere
 
 zbins = cfg['zbins']
@@ -53,11 +51,15 @@ assert isinstance(zbins, int), 'zbins must be an integer'
 assert isinstance(nbl, int), 'nbl must be an integer'
 
 if EP_or_ED == 'EP':
-    n_gal = cfg['n_gal']
-    assert np.isscalar(n_gal), 'n_gal must be a scalar'
+    n_gal_shear = cfg['n_gal_shear']
+    n_gal_clustering = cfg['n_gal_clustering']
+    assert np.isscalar(n_gal_shear), 'n_gal_shear must be a scalar'
+    assert np.isscalar(n_gal_clustering), 'n_gal_clustering must be a scalar'
 elif EP_or_ED == 'ED':
-    n_gal = np.genfromtxt(cfg['n_gal_path'])
-    assert len(n_gal) == zbins, 'n_gal must be a vector of length zbins'
+    n_gal_shear = np.genfromtxt(cfg['n_gal_path_shear'])
+    n_gal_clustering = np.genfromtxt(cfg['n_gal_path_clustering'])
+    assert len(n_gal_shear) == zbins, 'n_gal_shear must be a vector of length zbins'
+    assert len(n_gal_clustering) == zbins, 'n_gal_clustering must be a vector of length zbins'
 else:
     raise ValueError('EP_or_ED must be either EP or ED')
 
@@ -115,7 +117,10 @@ cl_3x2pt_5D[0, 1, :, :, :] = np.transpose(cl_GL_3D, (0, 2, 1))
 
 # ! Compute covariance
 # create a noise with dummy axis for ell, to have the same shape as cl_3x2pt_5D
-noise_3x2pt_4D = utils.build_noise(zbins, n_probes, sigma_eps2=sigma_eps2, ng=n_gal, EP_or_ED=EP_or_ED)
+noise_3x2pt_4D = utils.build_noise(zbins, n_probes, sigma_eps2=sigma_eps2,
+                                   ng_shear=n_gal_shear, 
+                                   ng_clust=n_gal_clustering,
+                                   EP_or_ED=EP_or_ED)
 noise_3x2pt_5D = np.zeros((n_probes, n_probes, nbl, zbins, zbins))
 for probe_A in (0, 1):
     for probe_B in (0, 1):
@@ -179,7 +184,8 @@ if cfg['plot_covariance_2D']:
     plt.title(f'log10(cov_3x2pt_2D)\nordering: {covariance_ordering_2D}')
 
 other_quantities_tosave = {
-    'n_gal [arcmin^{-2}]': n_gal,
+    'n_gal_shear [arcmin^{-2}]': n_gal_shear,
+    'n_gal_clustering [arcmin^{-2}]': n_gal_clustering,
     'survey_area [deg^2]': survey_area,
     'sigma_eps': sigma_eps,
 }
