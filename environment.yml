@@ -1,0 +1,15 @@
+name: spaceborne-covg  # Replace with the name of your project
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python>=3.9  # You can specify the Python version you are using
+  - matplotlib
+  - numpy
+  - pyyaml
+  - pip
+  - scipy=1.7.3
+  - namaster
+  - healpy
+  - pip:
+    - utils
