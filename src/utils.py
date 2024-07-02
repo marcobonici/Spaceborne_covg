@@ -1019,12 +1019,9 @@ def cov_2DCLOE_to_4D_3x2pt(cov_2D, nbl, zbins, block_index='vincenzo'):
 
 
 def correlation_from_covariance(covariance):
-    """ not thoroughly tested. Taken from
+    """ Credits:
     https://gist.github.com/wiso/ce2a9919ded228838703c1c7c7dad13b
-    does NOT work with 3x2pt
     """
-    if covariance.shape[0] > 2000:
-        print("this function doesn't work for 3x2pt")
 
     v = np.sqrt(np.diag(covariance))
     outer_v = np.outer(v, v)
