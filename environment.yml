@@ -8,8 +8,8 @@ dependencies:
   - numpy
   - pyyaml
   - pip
-  - scipy=1.7.3
+  - scipy=1.7
   - namaster
-  - healpy
   - pip:
+    - healpy
     - utils
