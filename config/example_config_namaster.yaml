@@ -35,7 +35,9 @@ n_gal_path: null
 # intrinsic ellipticity dispersion per *component*. The total dispersion is
 # sigma_eps = sigma_eps_i * sqrt(2), and the term entering the covariance is sigma_eps^2
 sigma_eps_i: 0.26
-survey_area: 14700 # in deg^2. This is the full sphere here
+# survey_area: 14700 # in deg^2
+# survey_area: 2500  # in deg^2
+survey_area_deg2: 41252.96125  # in deg^2
 nside: 512
 apodize_mask: True
 aposize: 1 # apodization scale in deg
