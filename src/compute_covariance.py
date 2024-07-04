@@ -15,9 +15,9 @@ import utils
 with open('../config/example_config_namaster.yaml', 'r') as file:
     cfg = yaml.safe_load(file)
 
-survey_area = cfg['survey_area']  # deg^2
+survey_area_deg2 = cfg['survey_area_deg2']  # deg^2
 deg2_in_sphere = 41252.96125
-fsky = survey_area / deg2_in_sphere
+fsky = survey_area_deg2 / deg2_in_sphere
 
 zbins = cfg['zbins']
 ell_min = cfg['ell_min']
@@ -142,31 +142,91 @@ if part_sky:
     # mask = hp.read_map(mask_path)
     sys.path.append('/home/davide/Documenti/Lavoro/Programmi/Spaceborne/spaceborne')
     from mask_fits_to_cl import generate_polar_cap
-    mask = generate_polar_cap(area_deg2=survey_area, nside=cfg['nside'])
+    
+    if survey_area_deg2 == deg2_in_sphere:
+        mask = np.ones(hp.pixelfunc.nside2npix(nside))
+    else:
+        mask = generate_polar_cap(area_deg2=survey_area_deg2, nside=cfg['nside'])
     
     # plot/apodize
     hp.mollview(mask, coord=['G', 'C'], title='before apodization', cmap='inferno_r')
-    
     if cfg['apodize_mask']:
         mask = nmt.mask_apodization(mask, aposize=cfg['aposize'], apotype="Smooth")
-    
     hp.mollview(mask, coord=['G', 'C'], title='after apodization', cmap='inferno_r')
     
-    # get nside and lmax
+    # create nmt field from the mask
+    # TODO maks=None (as in the example) or maps=[mask]?
+    f_mask = nmt.NmtField(mask=mask, maps=None, spin=0)  # seems better to pass None as map...
+
+    # get nside and lmax_mask 
     nside = hp.get_nside(mask)
     lmax_mask = int(np.pi/hp.pixelfunc.nside2resol(nside))
+    
+    # get lmin: quick estimate
+    survey_area_rad = np.sum(mask) * hp.nside2pixarea(nside)
+    lmin_mask = int(np.ceil(np.pi / np.sqrt(survey_area_rad)))
+
+    print('lmin_mask:', lmin_mask)
     print('lmax_mask:', lmax_mask)
     print('nside:', nside)
+    
+    # ! get lmin: better estimate
+    
+    # Define the number of bands and create bandpowers
+    n_bands = cfg['nbands']
+    b_full = nmt.NmtBin.from_nside_linear(nside, n_bands)
+    w = nmt.NmtWorkspace()
+    w.compute_coupling_matrix(f_mask, f_mask, b_full)
+
+    # Get ell and bandpower windows
+    ell = np.arange(3 * nside)
+    bpw = w.get_bandpower_windows()
+
+    # Calculate cumulative weight to find ell_min
+    cumulative_weight = np.cumsum(bpw[0, :, 0, :], axis=-1)
+
+    threshold = 0.95  # Adjust this threshold as needed
+
+    ell_min = []
+    for i in range(bpw.shape[0]):
+        idx = np.where(cumulative_weight[i] > threshold)[0]
+        if len(idx) > 0:
+            ell_min.append(ell[idx[0]])
+        else:
+            print(f"No index found for band {i} with cumulative weight > {threshold}")
+
+    if ell_min:
+        ell_min = int(np.ceil(np.mean(ell_min)))
+        print(f"Estimated ell_min: {ell_min}")
+    else:
+        print("ell_min array is empty")
+
+            
+    # Plotting bandpower windows and ell_min
+    n_ell = bpw.shape[-1]
+    ell_plot = np.arange(n_ell)
+
+    plt.figure(figsize=(10, 6))
+    for i in range(bpw.shape[1]):
+        plt.plot(ell_plot, bpw[0, i, 0, :])
+    plt.axvline(ell_min, color='r', linestyle='--', label='Estimated ell_min')
+    plt.xlabel(r'$\ell$')
+    plt.ylabel('Window function')
+    plt.legend()
+    plt.title('Bandpower Window Functions')
+    plt.show()
+    
+    # TODO better understand bp wf shape, why do the go below 0?
+    # TODO check implementation by R. Upham: https://github.com/robinupham/shear_pcl_cov/blob/main/shear_pcl_cov/gaussian_cov.py
+    # TODO finish checking lmin
+    # ! end get lmin: better estimate
+
     
     # cut the cl ell range
     # TODO is this correct? should I use lmax_mask instead?
     cl_LL_3D = cl_LL_3D[:3*nside, :, :]
     cl_GL_3D = cl_GL_3D[:3*nside, :, :]
     cl_GG_3D = cl_GG_3D[:3*nside, :, :]
-    
-    # Simple example showcasing the use of NaMaster to compute the pseudo-Cl estimator 
-    # of the angular cross-power spectrum of a spin-0 field
-    f_mask = nmt.NmtField(mask=mask, maps=None, spin=0)
 
     
     def get_sample_field(cl_TT, cl_EE, cl_BB, cl_TE):
@@ -186,8 +246,6 @@ if part_sky:
 
         return cl_decoupled
 
-
-    
     # generate sample fields for the 
     # TODO how about the cross-redshifts?
     f0 = np.empty(zbins, dtype=object)
@@ -208,11 +266,18 @@ if part_sky:
     hp.mollview(map_q, title=f'map Q, zi={zi}', cmap='inferno_r')
     hp.mollview(map_u, title=f'map U, zi={zi}', cmap='inferno_r')
     
-    # TODO better understand this section
+    # Initialize binning scheme with bandpowers of constant width
+    # (nbands multipoles per bin)
     nbands = cfg['nbands']
+    # TODO use lmax_mask instead of nside?
+    # b = nmt.NmtBin.from_lmax_linear(lmax_mask, nbands)
     b = nmt.NmtBin.from_nside_linear(nside, nbands)
     
-    print("Workspace")
+    # get effective ells per bandpower
+    ell_eff = b.get_effective_ells()
+    
+    print("Generating workspace...")
+    # TODO whould I loop over zi? here I'm only taking f_i[0]...
     w00 = nmt.NmtWorkspace()
     w00.compute_coupling_matrix(f0[0], f0[0], b)
     w02 = nmt.NmtWorkspace()
@@ -221,22 +286,36 @@ if part_sky:
     w22.compute_coupling_matrix(f2[0], f2[0], b)
     
     # Compute spectra
+    # TODO add noise?
     cl_GG_measured = np.array([[compute_master(f0[i], f0[j], w00) for i in range(zbins)] for j in range(zbins)])
     cl_GL_measured = np.array([[compute_master(f0[i], f2[j], w02) for i in range(zbins)] for j in range(zbins)])
     cl_LL_measured = np.array([[compute_master(f2[i], f2[j], w22) for i in range(zbins)] for j in range(zbins)])
-    # TODO end better understand this section
 
 
     # Let's now compute the Gaussian estimate of the covariance!
-    print("Covariance")
+    print("Computing coupling coefficients...")
+    start_time = time.perf_counter()
     # First we generate a NmtCovarianceWorkspace object to precompute
     # and store the necessary coupling coefficients
     cw = nmt.NmtCovarianceWorkspace()
     # This is the time-consuming operation
     # Note that you only need to do this once,
     # regardless of spin
-    cw.compute_coupling_coefficients(f0, f0, f0, f0)
+    cw.compute_coupling_coefficients(f0[0], f0[0], f0[0], f0[0])
+    print(f"Coupling coefficients computed in {(time.perf_counter() - start_time):.2f} s...")
     
+    
+    # TODO generalize to all zbin cross-correlations; z=0 for the moment
+    # ! this is just a quick test
+    cl_tt = cl_GG_3D[:, 0, 0]
+    cl_te = cl_GL_3D[:, 0, 0]
+    cl_tb = cl_EB_3D[:, 0, 0]
+    cl_eb = cl_EB_3D[:, 0, 0]
+    cl_ee = cl_EE_3D[:, 0, 0]
+    cl_bb = cl_BB_3D[:, 0, 0]
+    assert w00.get_bandpower_windows().shape[1] == w02.get_bandpower_windows().shape[1] == \
+        w22.get_bandpower_windows().shape[1], "The number of bandpower windows must be the same for all fields"  
+    n_ell = w00.get_bandpower_windows().shape[1]
     
     # The next few lines show how to extract the covariance matrices
     # for different spin combinations.
@@ -249,7 +328,9 @@ if part_sky:
                                         w00, wb=w00).reshape([n_ell, 1,
                                                                 n_ell, 1])
     covar_TT_TT = covar_00_00[:, 0, :, 0]
-    covar_02_02 = nmt.gaussian_covariance(cw, 0, 2, 0, 2,  # Spins of the 4 fields
+    
+    covar_02_02 = nmt.gaussian_covariance(cw, 
+                                          0, 2, 0, 2,  # Spins of the 4 fields
                                         [cl_tt],  # TT
                                         [cl_te, cl_tb],  # TE, TB
                                         [cl_te, cl_tb],  # ET, BT
@@ -263,7 +344,8 @@ if part_sky:
     covar_TB_TB = covar_02_02[:, 1, :, 1]
 
 
-    covar_00_22 = nmt.gaussian_covariance(cw, 0, 0, 2, 2,  # Spins of the 4 fields
+    covar_00_22 = nmt.gaussian_covariance(cw, 
+                                          0, 0, 2, 2,  # Spins of the 4 fields
                                         [cl_te, cl_tb],  # TE, TB
                                         [cl_te, cl_tb],  # TE, TB
                                         [cl_te, cl_tb],  # TE, TB
@@ -275,7 +357,8 @@ if part_sky:
     covar_TT_BE = covar_00_22[:, 0, :, 2]
     covar_TT_BB = covar_00_22[:, 0, :, 3]
 
-    covar_02_22 = nmt.gaussian_covariance(cw, 0, 2, 2, 2,  # Spins of the 4 fields
+    covar_02_22 = nmt.gaussian_covariance(cw, 
+                                          0, 2, 2, 2,  # Spins of the 4 fields
                                         [cl_te, cl_tb],  # TE, TB
                                         [cl_te, cl_tb],  # TE, TB
                                         [cl_ee, cl_eb,
@@ -294,7 +377,8 @@ if part_sky:
     covar_TB_BB = covar_02_22[:, 1, :, 3]
 
 
-    covar_22_22 = nmt.gaussian_covariance(cw, 2, 2, 2, 2,  # Spins of the 4 fields
+    covar_22_22 = nmt.gaussian_covariance(cw, 
+                                          2, 2, 2, 2,  # Spins of the 4 fields
                                         [cl_ee, cl_eb,
                                         cl_eb, cl_bb],  # EE, EB, BE, BB
                                         [cl_ee, cl_eb,
@@ -305,9 +389,100 @@ if part_sky:
                                         cl_eb, cl_bb],  # EE, EB, BE, BB
                                         w22, wb=w22).reshape([n_ell, 4,
                                                                 n_ell, 4])
-
+                                        
+    covar_EE_EE = covar_22_22[:, 0, :, 0]
+    covar_EE_EB = covar_22_22[:, 0, :, 1]
+    covar_EE_BE = covar_22_22[:, 0, :, 2]
+    covar_EE_BB = covar_22_22[:, 0, :, 3]
+    covar_EB_EE = covar_22_22[:, 1, :, 0]
+    covar_EB_EB = covar_22_22[:, 1, :, 1]
+    covar_EB_BE = covar_22_22[:, 1, :, 2]
+    covar_EB_BB = covar_22_22[:, 1, :, 3]
+    covar_BE_EE = covar_22_22[:, 2, :, 0]
+    covar_BE_EB = covar_22_22[:, 2, :, 1]
+    covar_BE_BE = covar_22_22[:, 2, :, 2]
+    covar_BE_BB = covar_22_22[:, 2, :, 3]
+    covar_BB_EE = covar_22_22[:, 3, :, 0]
+    covar_BB_EB = covar_22_22[:, 3, :, 1]
+    covar_BB_BE = covar_22_22[:, 3, :, 2]
+    covar_BB_BB = covar_22_22[:, 3, :, 3]
+    
+    # build dict with relevant covmats
+    cov_nmt_dict = {
+        'LLLL': covar_EE_EE,
+        'GLLL': covar_TE_EE,
+        'GGLL': covar_TT_EE,
+        'GLGL': covar_TE_TE,
         
-    assert False, 'stop here to check get_sample_field'
+        # 'GGGL': covar_TT_TE,  # TODO this is still missing!
+        'GGGG': covar_TT_TT,
+    }
+    
+    # test inverison of the different blocks
+    print('Testng inversion of the covariance blocks')
+    for key in cov_nmt_dict.keys():
+        # test inversion
+        covar_inv = np.linalg.inv(cov_nmt_dict[key])
+        np.linalg.cholesky(cov_nmt_dict[key])
+    print('Done')
+    
+    # ! test against the full-sky covariance
+    
+
+    
+    # TODO are the ell and delta_ell values correct??
+
+    cl_LL_binned = cl_LL_3D[ell_eff.astype(int), :, :]  # TODO I'm assuming ell_min=0, so ell_value=ell_idx
+    cl_LL_binned = cl_LL_binned[None, None, :, :, :]
+    noise_LL_binned = np.zeros_like(cl_LL_binned)
+    plt.plot(ell_eff, np.ones_like(ell_eff), ls='dotted')
+    delta_ell_eff = np.diff(ell_eff)
+    nbl_eff = len(ell_eff)
+    delta_ell_eff = np.ones_like(ell_eff)*delta_ell_eff[0]
+    cov_WL_GO_6D = utils.covariance_einsum(cl_LL_binned, noise_LL_binned, fsky, ell_eff, delta_ell_eff)[0, 0, 0, 0, ...]
+    cov_WL_GO_2D_tocompare = cov_WL_GO_6D[:, :, 0, 0, 0, 0]
+    
+    fig, ax = plt.subplots(2, 1, sharex=True,gridspec_kw={'wspace': 0, 'hspace':0} )
+    ax[0].set_title(f'WL, survey_area = {survey_area_deg2} deg2')
+    ax[0].loglog(ell_eff, np.diag(cov_WL_GO_2D_tocompare), label='full_sky/fsky', marker='.', c='k')
+    ax[0].loglog(ell_eff, np.diag(covar_EE_EE), label=r'part_sky, $\ell^\prime=\ell$', marker='.')
+    ax[0].loglog(ell_eff[:-1], np.abs(np.diag(covar_EE_EE, k=1)), label=r'part_sky, $\ell^\prime=\ell+1$', marker='.',  ls='--')
+    ax[0].loglog(ell_eff[:-2], np.abs(np.diag(covar_EE_EE, k=2)), label=r'part_sky, $\ell^\prime=\ell+2$', marker='.')
+    ax[0].loglog(ell_eff[:-3], np.abs(np.diag(covar_EE_EE, k=3)), label=r'part_sky, $\ell^\prime=\ell+3$', marker='.',  ls='--')
+    ax[0].set_ylabel('cov')
+    ax[0].legend()
+    
+    ax[1].semilogx(ell_eff, np.diag(cov_WL_GO_2D_tocompare)/np.diag(covar_EE_EE), marker='.')
+    ax[1].set_ylabel('diag cov fsky/part_sky')
+    ax[1].set_xlabel(r'$\ell$')
+    
+    
+    fig, ax = plt.subplots(2, 2, figsize=(12, 10))
+
+    cax0 = ax[0, 0].matshow(np.log10(np.abs(cov_WL_GO_2D_tocompare)))
+    ax[0, 0].set_title('full_sky/fsky cov WL')
+    fig.colorbar(cax0, ax=ax[0, 0])
+
+    cax1 = ax[0, 1].matshow(utils.cov2corr(cov_WL_GO_2D_tocompare))
+    ax[0, 1].set_title('full_sky/fsky corr WL')
+    fig.colorbar(cax1, ax=ax[0, 1])
+
+    cax2 = ax[1, 0].matshow(np.log10(np.abs(covar_EE_EE)))
+    ax[1, 0].set_title('NaMaster cov WL (logabs)')
+    fig.colorbar(cax2, ax=ax[1, 0])
+
+    cax3 = ax[1, 1].matshow(utils.cov2corr(covar_EE_EE))
+    ax[1, 1].set_title('NaMaster corr WL')
+    fig.colorbar(cax3, ax=ax[1, 1])
+    
+    # TODO plot ratio
+
+    # Adjust layout to make room for colorbars
+    plt.tight_layout()
+    fig.suptitle(f'survey area = {survey_area_deg2} deg2')
+    plt.show()
+  
+    assert False, 'stop here to check psky cov'
     
     # Initialize binning scheme with bandpowers of constant width (Nbands multipoles per bin)
 
@@ -441,7 +616,7 @@ if cfg['plot_covariance_2D']:
 other_quantities_tosave = {
     'n_gal_shear [arcmin^{-2}]': n_gal_shear,
     'n_gal_clustering [arcmin^{-2}]': n_gal_clustering,
-    'survey_area [deg^2]': survey_area,
+    'survey_area [deg^2]': survey_area_deg2,
     'sigma_eps': sigma_eps,
 }
 
