@@ -1018,15 +1018,15 @@ def cov_2DCLOE_to_4D_3x2pt(cov_2D, nbl, zbins, block_index='vincenzo'):
     return cov_4D
 
 
-def correlation_from_covariance(covariance):
+def cov2corr(cov):
     """ Credits:
     https://gist.github.com/wiso/ce2a9919ded228838703c1c7c7dad13b
     """
 
-    v = np.sqrt(np.diag(covariance))
+    v = np.sqrt(np.diag(cov))
     outer_v = np.outer(v, v)
-    correlation = covariance / outer_v
-    correlation[covariance == 0] = 0
+    correlation = cov / outer_v
+    correlation[cov == 0] = 0
     return correlation
 
 
