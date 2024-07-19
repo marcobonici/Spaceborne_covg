@@ -11,6 +11,54 @@ import healpy as hp
 
 ###############################################################################
 
+
+def deg2_to_fsky(survey_area_deg2):
+    # deg2_in_sphere = 41252.96  # deg^2 in a spere
+    # return survey_area_deg2 / deg2_in_sphere
+
+    f_sky = survey_area_deg2 * (np.pi / 180) ** 2 / (4 * np.pi)
+    return f_sky
+
+def generate_polar_cap(area_deg2, nside=2048):
+
+    print(f'Generating a polar cap mask with area {area_deg2} deg2 and resolution nside {nside}')
+
+    # Expected sky fraction
+    fsky_expected = deg2_to_fsky(area_deg2)
+    print(f"Expected f_sky: {fsky_expected}")
+
+    # Convert the area to radians squared for the angular radius calculation
+    area_rad2 = area_deg2 * (np.pi / 180)**2
+
+    # The area of a cap is given by A = 2*pi*(1 - cos(theta)),
+    # so solving for theta gives us the angular radius of the cap
+    theta_cap_rad = np.arccos(1 - area_rad2 / (2 * np.pi))
+
+    # Convert the angular radius to degrees for visualization
+    theta_cap_deg = np.degrees(theta_cap_rad)
+    print(f"Angular radius of the cap in degrees: {theta_cap_deg}")
+
+    # Calculate the corresponding nside for the HEALPix map
+    # The resolution parameter nside should be chosen so lmax ~ 3*nside
+
+    # Create an empty mask with the appropriate number of pixels for our nside
+    mask = np.zeros(hp.nside2npix(nside))
+
+    # Find the pixels within our cap
+    # Vector pointing to the North Pole (θ=0, φ can be anything since θ=0 defines the pole)
+    vec = hp.ang2vec(0, 0)
+    pixels_in_cap = hp.query_disc(nside, vec, theta_cap_rad)
+
+    # Set the pixels within the cap to 1
+    mask[pixels_in_cap] = 1
+
+    # Calculate the actual sky fraction of the generated mask
+    fsky_actual = np.sum(mask) / len(mask)
+    print(f"Actual f_sky from the mask: {fsky_actual}")
+
+    return mask
+
+
 def generate_ind(triu_tril_square, row_col_major, size):
     """
     Generates a list of indices for the upper triangular part of a matrix
