@@ -140,13 +140,11 @@ if part_sky:
     
     # read or generate mask 
     # mask = hp.read_map(mask_path)
-    sys.path.append('/home/davide/Documenti/Lavoro/Programmi/Spaceborne/spaceborne')
-    from mask_fits_to_cl import generate_polar_cap
     
     if survey_area_deg2 == deg2_in_sphere:
-        mask = np.ones(hp.pixelfunc.nside2npix(nside))
+        mask = np.ones(hp.pixelfunc.nside2npix(cfg['nside']))
     else:
-        mask = generate_polar_cap(area_deg2=survey_area_deg2, nside=cfg['nside'])
+        mask = utils.generate_polar_cap(area_deg2=survey_area_deg2, nside=cfg['nside'])
     
     # plot/apodize
     hp.mollview(mask, coord=['G', 'C'], title='before apodization', cmap='inferno_r')
@@ -171,7 +169,6 @@ if part_sky:
     print('nside:', nside)
     
     # ! get lmin: better estimate
-    
     # Define the number of bands and create bandpowers
     n_bands = cfg['nbands']
     b_full = nmt.NmtBin.from_nside_linear(nside, n_bands)
@@ -325,7 +322,7 @@ if part_sky:
                                         [cl_tt],  # TT
                                         [cl_tt],  # TT
                                         [cl_tt],  # TT
-                                        w00, wb=w00).reshape([n_ell, 1,
+                                        wa=w00, wb=w00).reshape([n_ell, 1,
                                                                 n_ell, 1])
     covar_TT_TT = covar_00_00[:, 0, :, 0]
     
@@ -336,7 +333,7 @@ if part_sky:
                                         [cl_te, cl_tb],  # ET, BT
                                         [cl_ee, cl_eb,
                                         cl_eb, cl_bb],  # EE, EB, BE, BB
-                                        w02, wb=w02).reshape([n_ell, 2,
+                                        wa=w02, wb=w02).reshape([n_ell, 2,
                                                                 n_ell, 2])
     covar_TE_TE = covar_02_02[:, 0, :, 0]
     covar_TE_TB = covar_02_02[:, 0, :, 1]
@@ -350,7 +347,7 @@ if part_sky:
                                         [cl_te, cl_tb],  # TE, TB
                                         [cl_te, cl_tb],  # TE, TB
                                         [cl_te, cl_tb],  # TE, TB
-                                        w00, wb=w22).reshape([n_ell, 1,
+                                        wa=w00, wb=w22).reshape([n_ell, 1,
                                                                 n_ell, 4])
     covar_TT_EE = covar_00_22[:, 0, :, 0]
     covar_TT_EB = covar_00_22[:, 0, :, 1]
@@ -365,7 +362,7 @@ if part_sky:
                                         cl_eb, cl_bb],  # EE, EB, BE, BB
                                         [cl_ee, cl_eb,
                                         cl_eb, cl_bb],  # EE, EB, BE, BB
-                                        w02, wb=w22).reshape([n_ell, 2,
+                                        wa=w02, wb=w22).reshape([n_ell, 2,
                                                                 n_ell, 4])
     covar_TE_EE = covar_02_22[:, 0, :, 0]
     covar_TE_EB = covar_02_22[:, 0, :, 1]
@@ -387,7 +384,7 @@ if part_sky:
                                         cl_eb, cl_bb],  # EE, EB, BE, BB
                                         [cl_ee, cl_eb,
                                         cl_eb, cl_bb],  # EE, EB, BE, BB
-                                        w22, wb=w22).reshape([n_ell, 4,
+                                        wa=w22, wb=w22).reshape([n_ell, 4,
                                                                 n_ell, 4])
                                         
     covar_EE_EE = covar_22_22[:, 0, :, 0]
