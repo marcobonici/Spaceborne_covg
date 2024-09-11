@@ -36,12 +36,12 @@ n_gal_path: null
 # sigma_eps = sigma_eps_i * sqrt(2), and the term entering the covariance is sigma_eps^2
 sigma_eps_i: 0.26
 # survey_area_deg2: 14700 # in deg^2
-survey_area_deg2: 2500  # in deg^2
+survey_area_deg2: 41252.96125  # in deg^2
 # survey_area_deg2: 41252.96125  # in deg^2
 nside: 512
 apodize_mask: True
 aposize: 1 # apodization scale in deg
-nbands: 25 # number of multipole values per bandpower
+ells_per_band: 25 # number of multipole values per bandpower
 
 # datavector and covariance ordering options
 triu_tril: "triu" # or 'tril'. Which elements of the (symmetric) auto-spectra are kept
