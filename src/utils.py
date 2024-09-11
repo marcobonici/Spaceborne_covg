@@ -11,6 +11,50 @@ import healpy as hp
 
 ###############################################################################
 
+deg2_in_sphere = 4 * np.pi * (180 / np.pi)**2
+
+
+def percent_diff(array_1, array_2, abs_value=False):
+    diff = (array_1 / array_2 - 1) * 100
+    if abs_value:
+        return np.abs(diff)
+    else:
+        return diff
+    
+    
+def matshow(array, title="title", log=True, abs_val=False, threshold=None, only_show_nans=False, matshow_kwargs={}):
+    """
+    :param array:
+    :param title:
+    :param log:
+    :param abs_val:
+    :param threshold: if None, do not mask the values; otherwise, keep only the elements above the threshold
+    (i.e., mask the ones below the threshold)
+    :return:
+    """
+
+    if only_show_nans:
+        warnings.warn('only_show_nans is True, better switch off log and abs_val for the moment')
+        # Set non-NaN elements to 0 and NaN elements to 1
+        array = np.where(np.isnan(array), 1, 0)
+        title += ' (only NaNs shown)'
+
+    # the ordering of these is important: I want the log(abs), not abs(log)
+    if abs_val:  # take the absolute value
+        array = np.abs(array)
+        title = 'abs ' + title
+    if log:  # take the log
+        array = np.log10(array)
+        title = 'log10 ' + title
+
+    if threshold is not None:
+        array = np.ma.masked_where(array < threshold, array)
+        title += f" \n(masked below {threshold} \%)"
+
+    plt.matshow(array, **matshow_kwargs)
+    plt.colorbar()
+    plt.title(title)
+    plt.show()
 
 def deg2_to_fsky(survey_area_deg2):
     # deg2_in_sphere = 41252.96  # deg^2 in a spere
@@ -19,7 +63,12 @@ def deg2_to_fsky(survey_area_deg2):
     f_sky = survey_area_deg2 * (np.pi / 180) ** 2 / (4 * np.pi)
     return f_sky
 
-def generate_polar_cap(area_deg2, nside=2048):
+def generate_polar_cap(area_deg2, nside):
+
+    if np.isclose(area_deg2, deg2_in_sphere, rtol=1e-5, atol=0):
+        print('area_deg2 is very close to the full sky, returning a full sky mask')
+        mask = np.ones(hp.pixelfunc.nside2npix(nside))
+        return mask
 
     print(f'Generating a polar cap mask with area {area_deg2} deg2 and resolution nside {nside}')
 
