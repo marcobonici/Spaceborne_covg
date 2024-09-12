@@ -27,7 +27,7 @@ def compute_master(f_a, f_b, wsp):
     return cl_decoupled
 
 
-def find_ellmin_from_bpw(bpw, ells ,threshold):
+def find_ellmin_from_bpw(bpw, ells, threshold):
 
     # Calculate cumulative weight to find ell_min
     cumulative_weight = np.cumsum(bpw[0, :, 0, :], axis=-1)
@@ -195,14 +195,14 @@ if part_sky:
     # check fsky and nside
     fsky_mask = np.mean(mask)  # ! this may change due to apodization, and this is the relevant fsky now!
     nside_from_mask = hp.get_nside(mask)
-    assert np.isclose(fsky_mask, fsky, atol=0, rtol=1e-2), 'fsky from mask does not match with fsky'
+    assert np.isclose(fsky_mask, fsky, atol=0, rtol=e-1), 'fsky from mask does not match with fsky within 10%'
     assert nside_from_mask == cfg['nside'], 'nside from mask is not consistent with the desired nside in the cfg file'
 
     # set different possible values for lmax
     lmax_mask = int(np.pi / hp.pixelfunc.nside2resol(nside))
     lmax_healpy = 3 * nside
     lmax = lmax_healpy  # TODO which one should I choose?
-   
+
     # get lmin: quick estimate
     survey_area_rad = np.sum(mask) * hp.nside2pixarea(nside)
     lmin_mask = int(np.ceil(np.pi / np.sqrt(survey_area_rad)))
@@ -256,8 +256,7 @@ if part_sky:
     plt.show()
     # TODO finish checking lmin
     # ! end get lmin: better estimate
-    
-    
+
     print('lmin_mask:', lmin_mask)
     print('lmin_from bpw:', lmin_bpw)
     print('lmax_mask:', lmax_mask)
@@ -326,6 +325,12 @@ if part_sky:
 
     colors = cm.rainbow(np.linspace(0, 1, zbins))
     for zi in range(zbins):
+
+        # bin the theory (see https://namaster.readthedocs.io/en/stable/source/sample_workspaces.html)
+        # cl_GG_3D_binned = w.decouple_cell(w.couple_cell(cl_GG_3D[:, zi, zi]))
+        # cl_GL_3D_binned = w.decouple_cell(w.couple_cell(cl_GL_3D[:, zi, zi]))
+        # cl_LL_3D_binned = w.decouple_cell(w.couple_cell(cl_LL_3D[:, zi, zi]))
+
         plt.plot(ells_eff, cl_LL_measured[zi, zi, 3, :], c=colors[zi], label=f'zi={zi}', alpha=.7)
         plt.scatter(ells_eff, cl_LL_3D[ells_eff.astype('int'), zi, zi], c=colors[zi], marker='.')
     plt.xlabel(r'$\ell$')
@@ -346,18 +351,29 @@ if part_sky:
 
     # TODO generalize to all zbin cross-correlations; z=0 for the moment
     # ! this is just a quick test
-    cl_tt = cl_GG_3D[:, 0, 0]
-    cl_te = cl_GL_3D[:, 0, 0]
-    cl_tb = cl_EB_3D[:, 0, 0]
-    cl_eb = cl_EB_3D[:, 0, 0]
-    cl_ee = cl_EE_3D[:, 0, 0]
-    cl_bb = cl_BB_3D[:, 0, 0]
     assert w00.get_bandpower_windows().shape[1] == w02.get_bandpower_windows().shape[1] == \
         w22.get_bandpower_windows().shape[1], "The number of bandpower windows must be the same for all fields"
     n_ell = w00.get_bandpower_windows().shape[1]
     # shape: (n_cls, n_bpws, n_cls, lmax+1)
     # n_cls is the number of power spectra (1, 2 or 4 for spin 0-0, spin 0-2 and spin 2-2 correlations)
+    cov_nmt_3x2pt_GO_10D = np.zeros((n_probes, n_probes, n_probes, n_probes, n_ell, n_ell, zbins, zbins, zbins, zbins))
 
+    zi, zj = 0, 0
+
+    cl_tt = cl_GG_3D[:, zi, zj]
+    cl_te = cl_GL_3D[:, zi, zj]
+    cl_tb = cl_EB_3D[:, zi, zj]
+    cl_eb = cl_EB_3D[:, zi, zj]
+    cl_ee = cl_EE_3D[:, zi, zj]
+    cl_bb = cl_BB_3D[:, zi, zj]
+
+    # * NOTE: the order of the arguments (in particular for the cls) is the following
+    # * spin_a1, spin_a2, spin_b1, spin_b2,
+    # * cla1b1, cla1b2, cla2b1, cla2b2
+    # * the order of the output dimensions depends on the order of the input list. See below:
+    # * [cl_te, cl_tb] - > TE=0, TB=1
+    # * covar_TT_TE = covar_00_02[:, 0, :, 0]
+    # * covar_TT_TB = covar_00_02[:, 0, :, 1]
     # The next few lines show how to extract the covariance matrices
     # for different spin combinations.
     covar_00_00 = nmt.gaussian_covariance(cw,
@@ -371,16 +387,16 @@ if part_sky:
     covar_TT_TT = covar_00_00[:, 0, :, 0]
 
     # TODO start - check this better - still new
-    # covar_00_02 = nmt.gaussian_covariance(cw,
-    #                                       0, 0, 0, 2,  # Spins of the 4 fields
-    #                                       [cl_tt],  # TT
-    #                                       [cl_tt],  # TT
-    #                                       [cl_te, cl_tb],  # TE, TB
-    #                                       [cl_te, cl_tb],  # TE, TB
-    #                                       wa=w00, wb=w02).reshape([n_ell, 1,
-    #                                                                n_ell, 2])
-    # covar_TT_TE = covar_00_02[:, 0, :, 0]
-    # covar_TT_TB = covar_00_02[:, 0, :, 1]
+    covar_00_02 = nmt.gaussian_covariance(cw,
+                                          0, 0, 0, 2,  # Spins of the 4 fields
+                                          [cl_tt],  # TT
+                                          [cl_te, cl_tb],  # TE, TB
+                                          [cl_tt],  # TT
+                                          [cl_te, cl_tb],  # TE, TB
+                                          wa=w00, wb=w02).reshape([n_ell, 1,
+                                                                   n_ell, 2])
+    covar_TT_TE = covar_00_02[:, 0, :, 0]
+    covar_TT_TB = covar_00_02[:, 0, :, 1]
     # TODO end - check this better - still new
 
     covar_02_02 = nmt.gaussian_covariance(cw,
@@ -389,7 +405,7 @@ if part_sky:
                                           [cl_te, cl_tb],  # TE, TB
                                           [cl_te, cl_tb],  # ET, BT
                                           [cl_ee, cl_eb,
-                                              cl_eb, cl_bb],  # EE, EB, BE, BB
+                                           cl_eb, cl_bb],  # EE, EB, BE, BB
                                           wa=w02, wb=w02).reshape([n_ell, 2,
                                                                    n_ell, 2])
     covar_TE_TE = covar_02_02[:, 0, :, 0]
@@ -415,9 +431,9 @@ if part_sky:
                                           [cl_te, cl_tb],  # TE, TB
                                           [cl_te, cl_tb],  # TE, TB
                                           [cl_ee, cl_eb,
-                                              cl_eb, cl_bb],  # EE, EB, BE, BB
+                                           cl_eb, cl_bb],  # EE, EB, BE, BB
                                           [cl_ee, cl_eb,
-                                              cl_eb, cl_bb],  # EE, EB, BE, BB
+                                           cl_eb, cl_bb],  # EE, EB, BE, BB
                                           wa=w02, wb=w22).reshape([n_ell, 2,
                                                                    n_ell, 4])
     covar_TE_EE = covar_02_22[:, 0, :, 0]
@@ -434,11 +450,11 @@ if part_sky:
                                           [cl_ee, cl_eb,
                                            cl_eb, cl_bb],  # EE, EB, BE, BB
                                           [cl_ee, cl_eb,
-                                              cl_eb, cl_bb],  # EE, EB, BE, BB
+                                           cl_eb, cl_bb],  # EE, EB, BE, BB
                                           [cl_ee, cl_eb,
-                                              cl_eb, cl_bb],  # EE, EB, BE, BB
+                                           cl_eb, cl_bb],  # EE, EB, BE, BB
                                           [cl_ee, cl_eb,
-                                              cl_eb, cl_bb],  # EE, EB, BE, BB
+                                           cl_eb, cl_bb],  # EE, EB, BE, BB
                                           wa=w22, wb=w22).reshape([n_ell, 4,
                                                                    n_ell, 4])
 
@@ -465,15 +481,26 @@ if part_sky:
         'GLLL': covar_TE_EE,
         'GGLL': covar_TT_EE,
         'GLGL': covar_TE_TE,
-
-        # 'GGGL': covar_TT_TE,
+        'GGGL': covar_TT_TE,
         'GGGG': covar_TT_TT,
     }
+
+    probename_dict = {
+        'L': 0,
+        'G': 1,
+    }
+
+    # TODO how about the zk, zl?
+    # cov_nmt_3x2pt_GO_10D[0, 0, 0, 0, :, :, zi, zj, zk, zl] = covar_EE_EE
+    # cov_nmt_3x2pt_GO_10D[1, 0, 0, 0, :, :, zi, zj, zk, zl] = covar_TE_EE
+    # cov_nmt_3x2pt_GO_10D[1, 1, 0, 0, :, :, zi, zj, zk, zl] = covar_TT_EE
+    # cov_nmt_3x2pt_GO_10D[1, 0, 1, 0, :, :, zi, zj, zk, zl] = covar_TE_TE
+    # cov_nmt_3x2pt_GO_10D[1, 1, 1, 0, :, :, zi, zj, zk, zl] = covar_TT_TE
+    # cov_nmt_3x2pt_GO_10D[1, 1, 1, 1, :, :, zi, zj, zk, zl] = covar_TT_TT
 
     # test inverison of the different blocks
     print('Testng inversion of the covariance blocks')
     for key in cov_nmt_dict.keys():
-        # test inversion
         covar_inv = np.linalg.inv(cov_nmt_dict[key])
         np.linalg.cholesky(cov_nmt_dict[key])
     print('Done')
@@ -481,27 +508,33 @@ if part_sky:
     # ! test against the full-sky/fsky covariance
     # TODO are the ell and delta_ell values correct??
     cl_LL_binned = cl_LL_3D[ells_eff.astype(int), :, :]  # TODO I'm assuming ell_min=0, so ell_value=ell_idx
+    cl_GL_binned = cl_GL_3D[ells_eff.astype(int), :, :]  # TODO I'm assuming ell_min=0, so ell_value=ell_idx
     cl_GG_binned = cl_GG_3D[ells_eff.astype(int), :, :]  # TODO I'm assuming ell_min=0, so ell_value=ell_idx
-    cl_LL_binned = cl_LL_binned[None, None, :, :, :]
-    cl_GG_binned = cl_GG_binned[None, None, :, :, :]
-    noise_LL_binned = np.zeros_like(cl_LL_binned)  # TODO no noise for the moment!!
-    noise_GG_binned = np.zeros_like(cl_GG_binned)  # TODO no noise for the moment!!
+
+    nbl = len(ells_eff)
+    cl_3x2pt_5d = np.zeros((n_probes, n_probes, nbl, zbins, zbins))
+    cl_3x2pt_5d[0, 0, :, :, :] = cl_LL_binned
+    cl_3x2pt_5d[1, 0, :, :, :] = cl_GL_binned
+    cl_3x2pt_5d[0, 1, :, :, :] = cl_GL_binned.transpose(0, 2, 1)
+    cl_3x2pt_5d[1, 1, :, :, :] = cl_GG_binned
+    noise_3x2pt_5d = np.zeros_like(cl_3x2pt_5d)
+
     delta_ell_eff = np.diff(ells_eff)
-    nbl_eff = len(ells_eff)
     delta_ell_eff = np.ones_like(ells_eff) * delta_ell_eff[0]
 
-    cov_WL_GO_6D = utils.covariance_einsum(cl_LL_binned, noise_LL_binned, fsky_mask,
-                                           ells_eff, delta_ell_eff)[0, 0, 0, 0, ...]
-    cov_GC_GO_6D = utils.covariance_einsum(cl_GG_binned, noise_GG_binned, fsky_mask,
-                                           ells_eff, delta_ell_eff)[0, 0, 0, 0, ...]
+    cov_3x2pt_GO_10D = utils.covariance_einsum(cl_3x2pt_5d, noise_3x2pt_5d, fsky_mask,
+                                               ells_eff, delta_ell_eff)
 
-    cov_nmt = covar_EE_EE
-    cov_sb = cov_WL_GO_6D[:, :, 0, 0, 0, 0]
+    block = 'GGGL'
+    probe_a, probe_b, probe_c, probe_d = probename_dict[block[0]
+                                                        ], probename_dict[block[1]], probename_dict[block[2]], probename_dict[block[3]]
+    cov_nmt = cov_nmt_dict[block]
+    cov_sb = cov_3x2pt_GO_10D[probe_a, probe_b, probe_c, probe_d, :, :, 0, 0, 0, 0]
 
     # ! plot diagonal, for zi = zj = zk = zl = 0
     label = r'part_sky, $\ell^\prime=\ell+{off_diag:d}$'
     fig, ax = plt.subplots(2, 1, sharex=True, gridspec_kw={'wspace': 0, 'hspace': 0})
-    ax[0].set_title(f'WL, survey_area = {survey_area_deg2} deg2')
+    ax[0].set_title(f'{block}, survey_area = {survey_area_deg2} deg2')
     ax[0].loglog(ells_eff, np.diag(cov_sb), label='full_sky/fsky_mask', marker='.', c='k')
     ax[0].loglog(ells_eff, np.diag(cov_nmt), label=r'part_sky, $\ell^\prime=\ell$', marker='.')
 
@@ -528,15 +561,15 @@ if part_sky:
     # covariance
     cax0 = ax[0, 0].matshow(np.log10(np.abs(cov_sb)))
     cax2 = ax[1, 0].matshow(np.log10(np.abs(cov_nmt)))
-    ax[0, 0].set_title('log10 abs \nfull_sky/fsky_mask cov WL')
-    ax[1, 0].set_title('log10 abs \nNaMaster cov WL (logabs)')
+    ax[0, 0].set_title(f'log10 abs \nfull_sky/fsky_mask cov {block}')
+    ax[1, 0].set_title(f'log10 abs \nNaMaster cov {block} (logabs)')
     fig.colorbar(cax0, ax=ax[0, 0])
     fig.colorbar(cax2, ax=ax[1, 0])
     # correlation (common colorbar)
     cbar_corr_1 = ax[0, 1].matshow(corr_sb, vmin=-1, vmax=1, cmap='RdBu_r')
     cbar_corr_2 = ax[1, 1].matshow(corr_nmt, vmin=-1, vmax=1, cmap='RdBu_r')  # Apply same cmap and limits
-    ax[0, 1].set_title('full_sky/fsky_mask corr WL')
-    ax[1, 1].set_title('NaMaster corr WL')
+    ax[0, 1].set_title(f'full_sky/fsky_mask corr {block}')
+    ax[1, 1].set_title(f'NaMaster corr {block}')
     fig.colorbar(cbar_corr_1, ax=ax[0, 1])
     fig.colorbar(cbar_corr_2, ax=ax[1, 1])
     # perc diff
@@ -563,13 +596,13 @@ if part_sky:
 
     # Bin a power spectrum into bandpowers. This is carried out as a weighted
     # average over the multipoles in each bandpower.
-    cl_GG_3D_binned = np.array([[bin_obj.bin_cell(np.array([cl_GG_3D[:lmax + 1, zi, zj]]))[0]
+    cl_GG_3D_binned = np.array([[bin_obj.bin_cell(np.array([cl_GG_3D[:lmax, zi, zj]]))[0]
                                  for zi in range(zbins)]
                                 for zj in range(zbins)]).transpose((2, 0, 1))
 
     # Un-bins a set of bandpowers into a power spectrum. This is simply done by assigning a
     # constant value for every multipole in each bandpower.
-    cl_GG_3D_binned_unbinned = np.array([[bin_obj.unbin_cell(cl_GG_3D_binned[: zi, zj])
+    cl_GG_3D_binned_unbinned = np.array([[bin_obj.unbin_cell(cl_GG_3D_binned[:lmax, zi, zj])
                                           for zi in range(zbins)]
                                          for zj in range(zbins)]).transpose((2, 0, 1))
 
@@ -611,11 +644,11 @@ if part_sky:
 
     plt.plot(ells_unbinned[:lmax], cl_GG_3D[:, zi, zj], label=r'Original $C_\ell$')
     plt.plot(ells_eff, cl_GG_3D_binned[:, zi, zj], ls='', c='C1', label=r'Binned $C_\ell$', marker='o', alpha=0.6)
-    plt.plot(ells_unbinned[:lmax], cl_GG_3D_binned_unbinned[:, zi, zj],
-             label=r'Binned-unbinned $C_\ell$', alpha=0.6)
+    # plt.plot(ells_unbinned[:lmax], cl_GG_3D_binned_unbinned[:, zi, zj],
+    #  label=r'Binned-unbinned $C_\ell$', alpha=0.6)
 
     # plt.scatter(ell_eff, cl_GG_3D_measured[:, zi, zj], label=r'Reconstructed $C_\ell$', marker='.', alpha=0.6)
-    plt.plot(ells_eff, bpow_GG_3D[:, zi, zj], label=r'Bandpower $C_\ell$', alpha=0.6)
+    # plt.plot(ells_eff, bpow_GG_3D[:, zi, zj], label=r'Bandpower $C_\ell$', alpha=0.6)
     # plt.plot(ells_unbinned[:lmax], pseudoCl_GG_3d_1[:, zi, zj]/fsky_mask, label=r'pseudo $C_\ell$/fsky_mask', alpha=0.6)
     # plt.plot(ells_unbinned[:lmax], pseudoCl_GG_3d_2[:, zi, zj]/fsky_mask, label=r'pseudo $C_\ell$/fsky_mask', alpha=0.6)
 
