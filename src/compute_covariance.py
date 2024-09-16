@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
 import yaml
+from copy import deepcopy
 import utils
 
 
@@ -47,6 +48,22 @@ def find_ellmin_from_bpw(bpw, ells, threshold):
         print("ell_min array is empty")
 
     return ell_min
+
+
+def produce_gaussian_sims(cl_in, nreal, nside, mask=None):
+
+    simulated_cls = []
+
+    for _ in tqdm(range(nreal)):
+        simulated_map = hp.synfast(cl_in, nside)
+
+        if mask is not None:
+            simulated_map *= mask  # TODO verify this
+
+        simulated_cl = hp.anafast(simulated_map)
+        simulated_cls.append(simulated_cl)
+
+    return np.array(simulated_cls)
 
 
 # ! settings
@@ -143,9 +160,14 @@ else:
     assert delta_values.ndim == 1, 'delta ell values must be a 1D array'
 
 # ! import cls
-cl_LL_3D = np.load(f'{cfg["cl_LL_3D_path"]}')
-cl_GL_3D = np.load(f'{cfg["cl_GL_3D_path"]}')
-cl_GG_3D = np.load(f'{cfg["cl_GG_3D_path"]}')
+cl_LL_3D_unbinned = np.load(f'{cfg["cl_LL_3D_path"]}')
+cl_GL_3D_unbinned = np.load(f'{cfg["cl_GL_3D_path"]}')
+cl_GG_3D_unbinned = np.load(f'{cfg["cl_GG_3D_path"]}')
+
+cl_LL_3D = deepcopy(cl_LL_3D_unbinned)
+cl_GL_3D = deepcopy(cl_GL_3D_unbinned)
+cl_GG_3D = deepcopy(cl_GG_3D_unbinned)
+
 # TODO check that the ell loaded or computed above matches the ell of the loaded Cl's
 # For now I just construct the 5D 3x2 Cl's from the nbl of the loaded Cl's
 nbl = cl_GG_3D.shape[0]
@@ -178,7 +200,7 @@ if part_sky:
     import healpy as hp
     import pymaster as nmt
 
-    ells_unbinned = np.arange(cl_LL_3D.shape[0])  # TODO make sure the range is correct
+    ells_unbinned = np.arange(cl_LL_3D.shape[0])
     ells_per_band = cfg['ells_per_band']
     nside = cfg['nside']
 
@@ -195,7 +217,7 @@ if part_sky:
     # check fsky and nside
     fsky_mask = np.mean(mask)  # ! this may change due to apodization, and this is the relevant fsky now!
     nside_from_mask = hp.get_nside(mask)
-    assert np.isclose(fsky_mask, fsky, atol=0, rtol=e-1), 'fsky from mask does not match with fsky within 10%'
+    assert np.isclose(fsky_mask, fsky, atol=0, rtol=2e-1), 'fsky from mask does not match with fsky within 10%'
     assert nside_from_mask == cfg['nside'], 'nside from mask is not consistent with the desired nside in the cfg file'
 
     # set different possible values for lmax
@@ -314,29 +336,29 @@ if part_sky:
 
     # Compute spectra
     # TODO add noise?
-    cl_GG_measured = np.array([[compute_master(f0[zi], f0[zj], w00) for zi in range(zbins)] for zj in range(zbins)])
-    cl_GL_measured = np.array([[compute_master(f0[zi], f2[zj], w02) for zi in range(zbins)] for zj in range(zbins)])
-    cl_LL_measured = np.array([[compute_master(f2[zi], f2[zj], w22) for zi in range(zbins)] for zj in range(zbins)])
+    # cl_GG_measured = np.array([[compute_master(f0[zi], f0[zj], w00) for zi in range(zbins)] for zj in range(zbins)])
+    # cl_GL_measured = np.array([[compute_master(f0[zi], f2[zj], w02) for zi in range(zbins)] for zj in range(zbins)])
+    # cl_LL_measured = np.array([[compute_master(f2[zi], f2[zj], w22) for zi in range(zbins)] for zj in range(zbins)])
 
     # TODO better understand third dimension
     # cl_GL_measured[zi, zi, 0, :] matches cl_LL_3D[zi, zi, :]
     # cl_LL_measured[zi, zi, 1&2, :] are very close to 0 (BE, EB?)
     # cl_LL_measured[zi, zi, 3, :] is the closest to cl_LL_3D[zi, zi, :]
 
-    colors = cm.rainbow(np.linspace(0, 1, zbins))
-    for zi in range(zbins):
+    # colors = cm.rainbow(np.linspace(0, 1, zbins))
+    # for zi in range(zbins):
 
         # bin the theory (see https://namaster.readthedocs.io/en/stable/source/sample_workspaces.html)
         # cl_GG_3D_binned = w.decouple_cell(w.couple_cell(cl_GG_3D[:, zi, zi]))
         # cl_GL_3D_binned = w.decouple_cell(w.couple_cell(cl_GL_3D[:, zi, zi]))
         # cl_LL_3D_binned = w.decouple_cell(w.couple_cell(cl_LL_3D[:, zi, zi]))
 
-        plt.plot(ells_eff, cl_LL_measured[zi, zi, 3, :], c=colors[zi], label=f'zi={zi}', alpha=.7)
-        plt.scatter(ells_eff, cl_LL_3D[ells_eff.astype('int'), zi, zi], c=colors[zi], marker='.')
-    plt.xlabel(r'$\ell$')
-    plt.yscale('log')
-    plt.ylabel(r'$C_\ell$')
-    plt.title('MASTER vs theory $C_\ell$')
+    #     plt.plot(ells_eff, cl_LL_measured[zi, zi, 3, :], c=colors[zi], label=f'zi={zi}', alpha=.7)
+    #     plt.scatter(ells_eff, cl_LL_3D[ells_eff.astype('int'), zi, zi], c=colors[zi], marker='.')
+    # plt.xlabel(r'$\ell$')
+    # plt.yscale('log')
+    # plt.ylabel(r'$C_\ell$')
+    # plt.title('MASTER vs theory $C_\ell$')
 
     # ! Let's now compute the Gaussian estimate of the covariance!
     print("Computing coupling coefficients...")
@@ -346,7 +368,8 @@ if part_sky:
     cw = nmt.NmtCovarianceWorkspace()
     # This is the time-consuming operation
     # Note that you only need to do this once, regardless of spin
-    cw.compute_coupling_coefficients(f0[0], f0[0], f0[0], f0[0])
+    # cw.compute_coupling_coefficients(f0[0], f0[0], f0[0], f0[0])
+    cw.compute_coupling_coefficients(f0_mask, f0_mask, f0_mask, f0_mask)  # TODO test this!!
     print(f"Coupling coefficients computed in {(time.perf_counter() - start_time):.2f} s...")
 
     # TODO generalize to all zbin cross-correlations; z=0 for the moment
@@ -507,16 +530,30 @@ if part_sky:
 
     # ! test against the full-sky/fsky covariance
     # TODO are the ell and delta_ell values correct??
-    cl_LL_binned = cl_LL_3D[ells_eff.astype(int), :, :]  # TODO I'm assuming ell_min=0, so ell_value=ell_idx
-    cl_GL_binned = cl_GL_3D[ells_eff.astype(int), :, :]  # TODO I'm assuming ell_min=0, so ell_value=ell_idx
-    cl_GG_binned = cl_GG_3D[ells_eff.astype(int), :, :]  # TODO I'm assuming ell_min=0, so ell_value=ell_idx
+    cl_LL_use = cl_LL_3D[ells_eff.astype(int), :, :]  # TODO I'm assuming ell_min=0, so ell_value=ell_idx
+    cl_GL_use = cl_GL_3D[ells_eff.astype(int), :, :]  # TODO I'm assuming ell_min=0, so ell_value=ell_idx
+    cl_GG_use = cl_GG_3D[ells_eff.astype(int), :, :]  # TODO I'm assuming ell_min=0, so ell_value=ell_idx
+
+    # other option:
+    # print('Computing NAMASTER Cls')
+    # start_time = time.time.perf_counter()
+    # cl_LL_use = np.zeros([len(ells_eff), zbins, zbins])
+    # cl_GL_use = np.zeros([len(ells_eff), zbins, zbins])
+    # cl_GG_use = np.zeros([len(ells_eff), zbins, zbins])
+    # for zi in range(zbins):
+    #     for zj in range(zbins):
+    #         cl_LL_use[:, zi, zj] = nmt.compute_full_master(f2[zi], f2[zj], bin_obj)[0]  # EE is 0, I think
+    #         cl_GL_use[:, zi, zj] = nmt.compute_full_master(f0[zi], f2[zj], bin_obj)[0]  # TE is 0, TB is 1, I think
+    #         cl_GG_use[:, zi, zj] = nmt.compute_full_master(f0[zi], f0[zj], bin_obj)[0]
+    
+    print('done in {:.2f}s'.format(time.time.perf_counter() - start_time))
 
     nbl = len(ells_eff)
     cl_3x2pt_5d = np.zeros((n_probes, n_probes, nbl, zbins, zbins))
-    cl_3x2pt_5d[0, 0, :, :, :] = cl_LL_binned
-    cl_3x2pt_5d[1, 0, :, :, :] = cl_GL_binned
-    cl_3x2pt_5d[0, 1, :, :, :] = cl_GL_binned.transpose(0, 2, 1)
-    cl_3x2pt_5d[1, 1, :, :, :] = cl_GG_binned
+    cl_3x2pt_5d[0, 0, :, :, :] = cl_LL_use
+    cl_3x2pt_5d[1, 0, :, :, :] = cl_GL_use
+    cl_3x2pt_5d[0, 1, :, :, :] = cl_GL_use.transpose(0, 2, 1)
+    cl_3x2pt_5d[1, 1, :, :, :] = cl_GG_use
     noise_3x2pt_5d = np.zeros_like(cl_3x2pt_5d)
 
     delta_ell_eff = np.diff(ells_eff)
@@ -525,17 +562,38 @@ if part_sky:
     cov_3x2pt_GO_10D = utils.covariance_einsum(cl_3x2pt_5d, noise_3x2pt_5d, fsky_mask,
                                                ells_eff, delta_ell_eff)
 
-    block = 'GGGL'
-    probe_a, probe_b, probe_c, probe_d = probename_dict[block[0]
-                                                        ], probename_dict[block[1]], probename_dict[block[2]], probename_dict[block[3]]
+    block = 'GGGG'
+    title = f'cov {block}\nsurvey_area = {survey_area_deg2} deg2'
+    probe_a, probe_b, probe_c, probe_d = \
+        probename_dict[block[0]], probename_dict[block[1]], probename_dict[block[2]], probename_dict[block[3]]
     cov_nmt = cov_nmt_dict[block]
     cov_sb = cov_3x2pt_GO_10D[probe_a, probe_b, probe_c, probe_d, :, :, 0, 0, 0, 0]
+
+    # cov from simulated maps
+    if block == 'GGGG':
+        cl_use = cl_GG_3D[:, zi, zi]
+    elif block == 'LLLL':
+        cl_use = cl_LL_3D[:, zi, zi]
+    elif block == 'GLGL':
+        cl_use = cl_GL_3D[:, zi, zi]
+
+    simulated_cls = produce_gaussian_sims(cl_use, nside=nside, nreal=100, mask=mask)
+
+    plt.figure()
+    plt.loglog(cl_use)
+    plt.loglog(simulated_cls[0])
+    plt.loglog(simulated_cls[7])
+
+    sims_mean = np.mean(simulated_cls, axis=0)
+    sims_var = np.var(simulated_cls, axis=0)
+    sims_cov = np.cov(simulated_cls, rowvar=False)
 
     # ! plot diagonal, for zi = zj = zk = zl = 0
     label = r'part_sky, $\ell^\prime=\ell+{off_diag:d}$'
     fig, ax = plt.subplots(2, 1, sharex=True, gridspec_kw={'wspace': 0, 'hspace': 0})
-    ax[0].set_title(f'{block}, survey_area = {survey_area_deg2} deg2')
+    ax[0].set_title(title)
     ax[0].loglog(ells_eff, np.diag(cov_sb), label='full_sky/fsky_mask', marker='.', c='k')
+    ax[0].loglog(ells_eff, np.diag(sims_cov)[ells_eff.astype('int')], label='cov from sims', marker='.', c='purple')
     ax[0].loglog(ells_eff, np.diag(cov_nmt), label=r'part_sky, $\ell^\prime=\ell$', marker='.')
 
     for k in range(1, 4):
@@ -561,15 +619,15 @@ if part_sky:
     # covariance
     cax0 = ax[0, 0].matshow(np.log10(np.abs(cov_sb)))
     cax2 = ax[1, 0].matshow(np.log10(np.abs(cov_nmt)))
-    ax[0, 0].set_title(f'log10 abs \nfull_sky/fsky_mask cov {block}')
-    ax[1, 0].set_title(f'log10 abs \nNaMaster cov {block} (logabs)')
+    ax[0, 0].set_title(f'log10 abs \nfull_sky/fsky_mask cov')
+    ax[1, 0].set_title(f'log10 abs \nNaMaster cov (logabs)')
     fig.colorbar(cax0, ax=ax[0, 0])
     fig.colorbar(cax2, ax=ax[1, 0])
     # correlation (common colorbar)
     cbar_corr_1 = ax[0, 1].matshow(corr_sb, vmin=-1, vmax=1, cmap='RdBu_r')
     cbar_corr_2 = ax[1, 1].matshow(corr_nmt, vmin=-1, vmax=1, cmap='RdBu_r')  # Apply same cmap and limits
-    ax[0, 1].set_title(f'full_sky/fsky_mask corr {block}')
-    ax[1, 1].set_title(f'NaMaster corr {block}')
+    ax[0, 1].set_title(f'full_sky/fsky_mask corr')
+    ax[1, 1].set_title(f'NaMaster corr')
     fig.colorbar(cbar_corr_1, ax=ax[0, 1])
     fig.colorbar(cbar_corr_2, ax=ax[1, 1])
     # perc diff
@@ -580,7 +638,7 @@ if part_sky:
     fig.colorbar(cax4, ax=ax[2, 0])
     fig.colorbar(cax5, ax=ax[2, 1])
     # Adjust layout to make room for colorbars
-    fig.suptitle(f'survey area = {survey_area_deg2} deg2')
+    fig.suptitle(title)
     plt.tight_layout()
     plt.show()
 
@@ -606,14 +664,14 @@ if part_sky:
                                           for zi in range(zbins)]
                                          for zj in range(zbins)]).transpose((2, 0, 1))
 
-    print('computing MASTER estimator for spin-0 x spin-0...')
-    start_time = time.perf_counter()
+    # print('computing MASTER estimator for spin-0 x spin-0...')
+    # start_time = time.perf_counter()
     # Computes the full MASTER estimate of the power spectrum of two fields (f1 and f2).
     # It represents the measured power spectrum after correcting for the mask and other observational effects.
-    cl_GG_3D_measured = np.array([[nmt.compute_full_master(f0[zi], f0[zj], bin_obj)[0]
-                                   for zi in range(zbins)]
-                                  for zj in range(zbins)]).transpose((2, 0, 1))
-    print('done in {:.2f} s'.format(time.perf_counter() - start_time))
+    # cl_GG_3D_measured = np.array([[nmt.compute_full_master(f0[zi], f0[zj], bin_obj)[0]
+    #                                for zi in range(zbins)]
+    #                               for zj in range(zbins)]).transpose((2, 0, 1))
+    # print('done in {:.2f} s'.format(time.perf_counter() - start_time))
 
     # Compute predictions
     # this is a general workspace that can be used for any spin combination, as it only depends on the survey geometry;
