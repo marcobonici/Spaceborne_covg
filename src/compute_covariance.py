@@ -50,18 +50,36 @@ def find_ellmin_from_bpw(bpw, ells, threshold):
     return ell_min
 
 
-def produce_gaussian_sims(cl_in, nreal, nside, mask=None):
+def produce_gaussian_sims(cl_in, nreal, nside, spin, mask, bin_obj):
+
+    # TODO unify with get_sample_field
+
+    nside_mask = hp.get_nside(mask)
+    if nside != nside_mask:
+        mask = hp.ud_grade(mask, nside_out=nside)
 
     simulated_cls = []
 
     for _ in tqdm(range(nreal)):
-        simulated_map = hp.synfast(cl_in, nside)
 
-        if mask is not None:
-            simulated_map *= mask  # TODO verify this
+        # Generate a Gaussian map using synfast
+        if spin == 0:
+            simulated_maps = [hp.synfast(cl_in, nside)]
 
-        simulated_cl = hp.anafast(simulated_map)
-        simulated_cls.append(simulated_cl)
+        elif spin == 2:
+            # Generate Gaussian map (for spin-2, you'll have two components: E and B modes)
+            simulated_map_e = hp.synfast(cl_in, nside)  # E-mode
+            simulated_map_b = hp.synfast(cl_in, nside)  # B-mode (if needed, or zeros)
+
+            # Combine E and B maps (even if you're working with only E-modes, NaMaster requires both components)
+            simulated_maps = [simulated_map_e, simulated_map_b]
+
+        # Initialize NaMaster field with the masked map
+        field = nmt.NmtField(mask, simulated_maps, spin=spin)
+
+        # Compute pseudo-Cl using NaMaster, which will include mode coupling corrections
+        pseudo_cl = nmt.compute_full_master(field, field, bin_obj)
+        simulated_cls.append(pseudo_cl)
 
     return np.array(simulated_cls)
 
@@ -69,7 +87,6 @@ def produce_gaussian_sims(cl_in, nreal, nside, mask=None):
 # ! settings
 # import the yaml config file
 # cfg = yaml.load(sys.stdin, Loader=yaml.FullLoader)
-
 # if you want to execute without passing the path
 with open('../config/example_config_namaster.yaml', 'r') as file:
     cfg = yaml.safe_load(file)
@@ -238,6 +255,8 @@ if part_sky:
 
     # ! create nmt field from the mask (there will be no maps associated to the fields)
     # TODO maks=None (as in the example) or maps=[mask]? I think None
+    start_time = time.perf_counter()
+    print('computing coupling coefficients...')
     f0_mask = nmt.NmtField(mask=mask, maps=None, spin=0)
     f2_mask = nmt.NmtField(mask=mask, maps=None, spin=2)
     w00 = nmt.NmtWorkspace()
@@ -246,6 +265,7 @@ if part_sky:
     w00.compute_coupling_matrix(f0_mask, f0_mask, bin_obj)
     w02.compute_coupling_matrix(f0_mask, f2_mask, bin_obj)
     w22.compute_coupling_matrix(f2_mask, f2_mask, bin_obj)
+    print(f'done in {(start_time - time.perf_counter()):.2f}s')
 
     # ! Plot bpowers
     # TODO: better understand difference between bpw_00, 02, 22, if any
@@ -361,7 +381,6 @@ if part_sky:
     # plt.title('MASTER vs theory $C_\ell$')
 
     # ! Let's now compute the Gaussian estimate of the covariance!
-    print("Computing coupling coefficients...")
     start_time = time.perf_counter()
     # First we generate a NmtCovarianceWorkspace object to precompute
     # and store the necessary coupling coefficients
@@ -369,6 +388,7 @@ if part_sky:
     # This is the time-consuming operation
     # Note that you only need to do this once, regardless of spin
     # cw.compute_coupling_coefficients(f0[0], f0[0], f0[0], f0[0])
+    print("Computing cov workspace coupling coefficients...")
     cw.compute_coupling_coefficients(f0_mask, f0_mask, f0_mask, f0_mask)  # TODO test this!!
     print(f"Coupling coefficients computed in {(time.perf_counter() - start_time):.2f} s...")
 
@@ -379,7 +399,7 @@ if part_sky:
     n_ell = w00.get_bandpower_windows().shape[1]
     # shape: (n_cls, n_bpws, n_cls, lmax+1)
     # n_cls is the number of power spectra (1, 2 or 4 for spin 0-0, spin 0-2 and spin 2-2 correlations)
-    cov_nmt_3x2pt_GO_10D = np.zeros((n_probes, n_probes, n_probes, n_probes, n_ell, n_ell, zbins, zbins, zbins, zbins))
+    # cov_nmt_3x2pt_GO_10D = np.zeros((n_probes, n_probes, n_probes, n_probes, n_ell, n_ell, zbins, zbins, zbins, zbins))
 
     zi, zj = 0, 0
 
@@ -528,6 +548,11 @@ if part_sky:
         np.linalg.cholesky(cov_nmt_dict[key])
     print('Done')
 
+    nbl = len(ells_eff)
+    # if len(ells_use) > 30:
+    # ells_use = ells_eff[::3].astype(int)
+    # nbl = len(ells_use)
+
     # ! test against the full-sky/fsky covariance
     # TODO are the ell and delta_ell values correct??
     cl_LL_use = cl_LL_3D[ells_eff.astype(int), :, :]  # TODO I'm assuming ell_min=0, so ell_value=ell_idx
@@ -545,10 +570,9 @@ if part_sky:
     #         cl_LL_use[:, zi, zj] = nmt.compute_full_master(f2[zi], f2[zj], bin_obj)[0]  # EE is 0, I think
     #         cl_GL_use[:, zi, zj] = nmt.compute_full_master(f0[zi], f2[zj], bin_obj)[0]  # TE is 0, TB is 1, I think
     #         cl_GG_use[:, zi, zj] = nmt.compute_full_master(f0[zi], f0[zj], bin_obj)[0]
-    
-    print('done in {:.2f}s'.format(time.time.perf_counter() - start_time))
 
-    nbl = len(ells_eff)
+    print('done in {:.2f}s'.format(time.perf_counter() - start_time))
+
     cl_3x2pt_5d = np.zeros((n_probes, n_probes, nbl, zbins, zbins))
     cl_3x2pt_5d[0, 0, :, :, :] = cl_LL_use
     cl_3x2pt_5d[1, 0, :, :, :] = cl_GL_use
@@ -572,55 +596,84 @@ if part_sky:
     # cov from simulated maps
     if block == 'GGGG':
         cl_use = cl_GG_3D[:, zi, zi]
-    elif block == 'LLLL':
-        cl_use = cl_LL_3D[:, zi, zi]
+        spin = 0
     elif block == 'GLGL':
         cl_use = cl_GL_3D[:, zi, zi]
+    elif block == 'LLLL':
+        spin = 2
+        cl_use = cl_LL_3D[:, zi, zi]
 
-    simulated_cls = produce_gaussian_sims(cl_use, nside=nside, nreal=100, mask=mask)
+    print('Producing gaussian simulations...')
+    nreal = 100
+    simulated_cls = produce_gaussian_sims(cl_use, nside=nside, nreal=nreal, spin=spin, mask=mask, bin_obj=bin_obj)
+    simulated_cls = simulated_cls[:, 0, :]
+    np.save(
+        f'../output/simulated_cls_{block}_nreal{nreal}_nside{nside}_{survey_area_deg2:d}deg2.npy', simulated_cls)
+    print('done in {:.2f}s'.format(time.perf_counter() - start_time))
+
+    sims_mean = np.mean(simulated_cls, axis=0   )
+    sims_var = np.var(simulated_cls, axis=0)
+    ells_eff_int = ells_eff.astype('int')
+    cov_sim = np.cov(simulated_cls, rowvar=False)
+
+    plt.matshow(np.log10(np.abs(cov_sim)))
+    plt.colorbar()
+    plt.title(f'simulated cov, nreal={nreal}')
 
     plt.figure()
-    plt.loglog(cl_use)
-    plt.loglog(simulated_cls[0])
-    plt.loglog(simulated_cls[7])
-
-    sims_mean = np.mean(simulated_cls, axis=0)
-    sims_var = np.var(simulated_cls, axis=0)
-    sims_cov = np.cov(simulated_cls, rowvar=False)
+    plt.loglog(cl_use, label='theory cls*fsky')
+    for i in range(nreal):
+        plt.loglog(ells_eff, simulated_cls[i], label='simulated (pseudo) cls, idx [i]')
+    plt.legend()
+    plt.xlabel(r'$\ell$')
+    plt.ylabel(r'$C_\ell$')
 
     # ! plot diagonal, for zi = zj = zk = zl = 0
+    diag_cov_sims = np.diag(cov_sim)  # no delta_ell if you're using the pseudo-cls in the gaussian_simulations func!!
+
     label = r'part_sky, $\ell^\prime=\ell+{off_diag:d}$'
-    fig, ax = plt.subplots(2, 1, sharex=True, gridspec_kw={'wspace': 0, 'hspace': 0})
+    colors = cm.rainbow(np.linspace(0, 1, 4))
+    fig, ax = plt.subplots(2, 1, figsize=(10, 10), sharex=True, gridspec_kw={'wspace': 0, 'hspace': 0})
     ax[0].set_title(title)
     ax[0].loglog(ells_eff, np.diag(cov_sb), label='full_sky/fsky_mask', marker='.', c='k')
-    ax[0].loglog(ells_eff, np.diag(sims_cov)[ells_eff.astype('int')], label='cov from sims', marker='.', c='purple')
-    ax[0].loglog(ells_eff, np.diag(cov_nmt), label=r'part_sky, $\ell^\prime=\ell$', marker='.')
+    ax[0].loglog(ells_eff, diag_cov_sims,label='cov from sims$', marker='.', c='purple')
+    ax[0].loglog(ells_eff, np.diag(cov_nmt), label=r'part_sky, $\ell^\prime=\ell$', marker='.', alpha=0.7)
 
     for k in range(1, 4):
-        diag = np.diag(cov_nmt, k=k)
-        ls = '--' if np.all(diag < 0) else '-'
-        diag = np.abs(diag) if np.all(diag < 0) else diag
-        ax[0].loglog(ells_eff[:-k], diag, label=label.format(off_diag=k), marker='.', ls=ls)
+        diag_nmt = np.diag(cov_nmt, k=k)
+        diag_sim = np.diag(cov_sim, k=k)
+        ls_nmt = '--' if np.all(diag_nmt < 0) else '-'
+        ls_sim = '--' if np.all(diag_sim < 0) else '-'
+        # diag_nmt = np.abs(diag_nmt) if np.all(diag_nmt < 0) else diag_nmt
+        # diag_sim = np.abs(diag_sim) if np.all(diag_sim < 0) else diag_sim
+        diag_nmt = np.abs(diag_nmt)
+        diag_sim = np.abs(diag_sim)
+        ax[0].loglog(ells_eff[:-k], diag_nmt, label=label.format(off_diag=k), marker='.', ls=ls_nmt, c=colors[k])
+        ax[0].loglog(ells_eff[:-k], diag_sim, marker='*', ls=ls_sim, c=colors[k])
 
     ax[0].set_ylabel('diag cov')
     ax[0].legend()
 
-    ax[1].semilogx(ells_eff, utils.percent_diff(np.diag(cov_sb), np.diag(cov_nmt)), marker='.')
+    ax[1].semilogx(ells_eff, utils.percent_diff(np.diag(cov_sb), np.diag(cov_nmt)), marker='.', label='sb vs nmt')
+    ax[1].semilogx(ells_eff, utils.percent_diff(diag_cov_sims, np.diag(cov_nmt)),
+                   marker='.', label='sim vs nmt', c='purple')
     ax[1].set_ylabel('% diff cov fsky_mask/part_sky')
     ax[1].set_xlabel(r'$\ell$')
     ax[1].fill_between(ells_eff, -10, 10, color='k', alpha=0.1)
     ax[1].axhline(y=0, color='k', alpha=0.5, ls='--')
+    ax[1].legend()
 
     # ! plot whole covmat, for zi = zj = zk = zl = 0
     corr_nmt = utils.cov2corr(cov_nmt)
     corr_sb = utils.cov2corr(cov_sb)
+    corr_sim = utils.cov2corr(cov_sim)
 
-    fig, ax = plt.subplots(3, 2, figsize=(10, 14))
+    fig, ax = plt.subplots(3, 2, figsize=(12, 14))
     # covariance
     cax0 = ax[0, 0].matshow(np.log10(np.abs(cov_sb)))
     cax2 = ax[1, 0].matshow(np.log10(np.abs(cov_nmt)))
     ax[0, 0].set_title(f'log10 abs \nfull_sky/fsky_mask cov')
-    ax[1, 0].set_title(f'log10 abs \nNaMaster cov (logabs)')
+    ax[1, 0].set_title(f'log10 abs \nNaMaster cov')
     fig.colorbar(cax0, ax=ax[0, 0])
     fig.colorbar(cax2, ax=ax[1, 0])
     # correlation (common colorbar)
