@@ -9,6 +9,8 @@ from tqdm import tqdm
 import yaml
 from copy import deepcopy
 import utils
+import os
+ROOT = os.getenv("ROOT")
 
 
 def get_sample_field(cl_TT, cl_EE, cl_BB, cl_TE, nside):
@@ -50,40 +52,85 @@ def find_ellmin_from_bpw(bpw, ells, threshold):
     return ell_min
 
 
-def produce_gaussian_sims(cl_TT, cl_EE, cl_BB, cl_TE, nreal, nside, mask, bin_obj):
+def produce_gaussian_sims(cl_TT, cl_EE, cl_BB, cl_TE, nreal, nside, mask, bin_obj, load_maps):
 
-    # TODO unify with get_sample_field
+    # TODO remove monopole from the map before running anafast to reduce boundary effects?
+    # TODO this is suggested in anafast documentation
 
     nside_mask = hp.get_nside(mask)
     if nside != nside_mask:
         mask = hp.ud_grade(mask, nside_out=nside)
 
     simulated_cls_tt = []
+    simulated_cls_te = []
+    simulated_cls_ee = []
+    maps_t = []
+    maps_q = []
+    maps_u = []
 
+    if load_maps:
+
+        print(f'Loading {nreal} maps for nside {nside} in full-sky')
+        maps_t = np.load(f"../output/maps_t_fullsky_nreal{nreal}_nside{nside}_z00.npy")
+        maps_q = np.load(f"../output/maps_q_fullsky_nreal{nreal}_nside{nside}_z00.npy")
+        maps_u = np.load(f"../output/maps_u_fullsky_nreal{nreal}_nside{nside}_z00.npy")
+
+    else:
+
+        print(f'Generating {nreal} maps for nside {nside} in full-sky')
+        for _ in tqdm(range(nreal)):
+
+            map_t, map_q, map_u = hp.synfast([cl_TT, cl_EE, cl_BB, cl_TE], nside)
+
+            maps_t.append(map_t)
+            maps_q.append(map_q)
+            maps_u.append(map_u)
+
+        maps_t = np.array(maps_t)
+        maps_q = np.array(maps_q)
+        maps_u = np.array(maps_u)
+
+        np.save(f"../output/maps_t_nreal{nreal}_nside{nside}_z0000.npy", maps_t)
+        np.save(f"../output/maps_q_nreal{nreal}_nside{nside}_z0000.npy", maps_q)
+        np.save(f"../output/maps_u_nreal{nreal}_nside{nside}_z0000.npy", maps_u)
+        print('Maps saved')
+
+    print('Applying mask to map and computing pseudo-cls...')
     for _ in tqdm(range(nreal)):
-        map_t, map_q, map_u = hp.synfast([cl_TT, cl_EE, cl_BB, cl_TE], nside)
+
+        # multiply by mask
         map_t *= mask
         map_q *= mask
         map_u *= mask
+
+        # initialize fields
         f0 = nmt.NmtField(mask, [map_t])
-        # f2 = nmt.NmtField(mask, [map_q, map_u])
-        
+        f2 = nmt.NmtField(mask, [map_q, map_u])
+
         # Compute pseudo-Cl using NaMaster, which will include mode coupling corrections
         pseudo_cl_tt = nmt.compute_full_master(f0, f0, bin_obj)
-        # pseudo_cl_te = nmt.compute_full_master(f0, f2, bin_obj)
-        # pseudo_cl_ee = nmt.compute_full_master(f2, f2, bin_obj)
-        simulated_cls_tt.append(pseudo_cl_tt)
-        # simulated_cls_te.append(pseudo_cl_te)
-        # simulated_cls_ee.append(pseudo_cl_ee)
+        pseudo_cl_te = nmt.compute_full_master(f0, f2, bin_obj)
+        pseudo_cl_ee = nmt.compute_full_master(f2, f2, bin_obj)
 
-    return np.array(simulated_cls_tt)
+        simulated_cls_tt.append(pseudo_cl_tt)
+        simulated_cls_te.append(pseudo_cl_te)
+        simulated_cls_ee.append(pseudo_cl_ee)
+
+        sim_cls_dict = {
+            'simulated_cls_tt': simulated_cls_tt,
+            'simulated_cls_te': simulated_cls_te,
+            'simulated_cls_ee': simulated_cls_ee,
+        }
+    print('...done')
+
+    return sim_cls_dict
 
 
 # ! settings
 # import the yaml config file
 # cfg = yaml.load(sys.stdin, Loader=yaml.FullLoader)
 # if you want to execute without passing the path
-with open('../config/example_config_namaster.yaml', 'r') as file:
+with open(f'{ROOT}/Spaceborne_covg/config/example_config_namaster.yaml', 'r') as file:
     cfg = yaml.safe_load(file)
 
 survey_area_deg2 = cfg['survey_area_deg2']  # deg^2
@@ -172,9 +219,9 @@ else:
     assert delta_values.ndim == 1, 'delta ell values must be a 1D array'
 
 # ! import cls
-cl_LL_3D_unbinned = np.load(f'{cfg["cl_LL_3D_path"]}')
-cl_GL_3D_unbinned = np.load(f'{cfg["cl_GL_3D_path"]}')
-cl_GG_3D_unbinned = np.load(f'{cfg["cl_GG_3D_path"]}')
+cl_LL_3D_unbinned = np.load(f'{cfg["cl_LL_3D_path"].format(ROOT=ROOT)}')
+cl_GL_3D_unbinned = np.load(f'{cfg["cl_GL_3D_path"].format(ROOT=ROOT)}')
+cl_GG_3D_unbinned = np.load(f'{cfg["cl_GG_3D_path"].format(ROOT=ROOT)}')
 
 cl_LL_3D = deepcopy(cl_LL_3D_unbinned)
 cl_GL_3D = deepcopy(cl_GL_3D_unbinned)
@@ -306,16 +353,16 @@ if part_sky:
     cl_LL_3D = cl_LL_3D[:lmax, :, :]
     cl_GL_3D = cl_GL_3D[:lmax, :, :]
     cl_GG_3D = cl_GG_3D[:lmax, :, :]
+    cl_EE_3D = cl_LL_3D
+    cl_BB_3D = np.zeros_like(cl_EE_3D)  # Assuming no B-modes
+    cl_EB_3D = np.zeros_like(cl_EE_3D)  # Assuming no EB cross-correlation
 
-    # generate sample fields for the
+    # generate sample fields
     # TODO how about the cross-redshifts?
     # f0 = np.empty(zbins, dtype=object)
     # f2 = np.empty(zbins, dtype=object)
     # for zi in range(zbins):
     #     # Prepare the power spectra for EE, BB, and EB
-    #     cl_EE_3D = cl_LL_3D
-    #     cl_BB_3D = np.zeros_like(cl_EE_3D)  # Assuming no B-modes
-    #     cl_EB_3D = np.zeros_like(cl_EE_3D)  # Assuming no EB cross-correlation
     #     f0[zi], f2[zi] = get_sample_field(cl_GG_3D[:, zi, zi], cl_LL_3D[:, zi, zi],
     #                                       cl_BB_3D[:, zi, zi], cl_GL_3D[:, zi, zi], nside)
 
@@ -363,10 +410,10 @@ if part_sky:
     # colors = cm.rainbow(np.linspace(0, 1, zbins))
     # for zi in range(zbins):
 
-        # bin the theory (see https://namaster.readthedocs.io/en/stable/source/sample_workspaces.html)
-        # cl_GG_3D_binned = w.decouple_cell(w.couple_cell(cl_GG_3D[:, zi, zi]))
-        # cl_GL_3D_binned = w.decouple_cell(w.couple_cell(cl_GL_3D[:, zi, zi]))
-        # cl_LL_3D_binned = w.decouple_cell(w.couple_cell(cl_LL_3D[:, zi, zi]))
+    # bin the theory (see https://namaster.readthedocs.io/en/stable/source/sample_workspaces.html)
+    # cl_GG_3D_binned = w.decouple_cell(w.couple_cell(cl_GG_3D[:, zi, zi]))
+    # cl_GL_3D_binned = w.decouple_cell(w.couple_cell(cl_GL_3D[:, zi, zi]))
+    # cl_LL_3D_binned = w.decouple_cell(w.couple_cell(cl_LL_3D[:, zi, zi]))
 
     #     plt.plot(ells_eff, cl_LL_measured[zi, zi, 3, :], c=colors[zi], label=f'zi={zi}', alpha=.7)
     #     plt.scatter(ells_eff, cl_LL_3D[ells_eff.astype('int'), zi, zi], c=colors[zi], marker='.')
@@ -590,27 +637,31 @@ if part_sky:
 
     # cov from simulated maps
     if block == 'GGGG':
-        cl_use = cl_GG_3D[:, zi, zi]
-        spin = 0
+        sim_cl_dict_key = 'tt'
+        cl_use = cl_GG_3D[:, zi, zj]
     elif block == 'GLGL':
-        cl_use = cl_GL_3D[:, zi, zi]
+        sim_cl_dict_key = 'te'
+        cl_use = cl_GL_3D[:, zi, zj]
     elif block == 'LLLL':
-        spin = 2
-        cl_use = cl_LL_3D[:, zi, zi]
+        sim_cl_dict_key = 'ee'
+        cl_use = cl_LL_3D[:, zi, zj]
 
     print('Producing gaussian simulations...')
-    nreal = 100
-    simulated_cls = produce_gaussian_sims(cl_GG_3D[:, zi, zi], 
-                                          cl_LL_3D[:, zi, zi], 
-                                          cl_BB_3D[:, zi, zi], 
-                                          cl_GL_3D[:, zi, zi], 
-                                          nside=nside, nreal=nreal, mask=mask, bin_obj=bin_obj)
-    simulated_cls = simulated_cls[:, 0, :]
-    np.save(
-        f'../output/simulated_cls_{block}_nreal{nreal}_nside{nside}_{survey_area_deg2:d}deg2.npy', simulated_cls)
-    print('done in {:.2f}s'.format(time.perf_counter() - start_time))
+    nreal = 2
+    simulated_cls_dict = produce_gaussian_sims(cl_GG_3D[:, zi, zi],
+                                               cl_LL_3D[:, zi, zi],
+                                               cl_BB_3D[:, zi, zi],
+                                               cl_GL_3D[:, zi, zi],
+                                               nside=nside, nreal=nreal,
+                                               mask=mask, bin_obj=bin_obj, 
+                                               load_maps=True)
+    simulated_cls = simulated_cls_dict[sim_cl_dict_key][:, 0, :]
+    print('...done in {:.2f}s'.format(time.perf_counter() - start_time))
+    
+    # np.save(
+        # f'../output/simulated_cls_{block}_nreal{nreal}_nside{nside}_{survey_area_deg2:d}deg2.npy', simulated_cls)
 
-    sims_mean = np.mean(simulated_cls, axis=0   )
+    sims_mean = np.mean(simulated_cls, axis=0)
     sims_var = np.var(simulated_cls, axis=0)
     ells_eff_int = ells_eff.astype('int')
     cov_sim = np.cov(simulated_cls, rowvar=False)
@@ -632,11 +683,11 @@ if part_sky:
 
     label = r'part_sky, $\ell^\prime=\ell+{off_diag:d}$'
     colors = cm.rainbow(np.linspace(0, 1, 4))
-    fig, ax = plt.subplots(2, 1, figsize=(10, 10), sharex=True, 
+    fig, ax = plt.subplots(2, 1, figsize=(10, 10), sharex=True,
                            gridspec_kw={'wspace': 0, 'hspace': 0, 'height_ratios': [2, 1]})
     ax[0].set_title(title)
     ax[0].loglog(ells_eff, np.diag(cov_sb), label='full_sky/fsky_mask', marker='.', c='k')
-    ax[0].loglog(ells_eff, diag_cov_sims,label='cov from sims$', marker='.', c='purple')
+    ax[0].loglog(ells_eff, diag_cov_sims, label='cov from sims$', marker='.', c='purple')
     ax[0].loglog(ells_eff, np.diag(cov_nmt), label=r'part_sky, $\ell^\prime=\ell$', marker='.', alpha=0.7)
 
     for k in range(1, 4):
