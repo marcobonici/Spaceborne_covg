@@ -11,7 +11,7 @@ from copy import deepcopy
 import utils
 
 
-def get_sample_field(cl_TT, cl_EE, cl_BB, cl_TE):
+def get_sample_field(cl_TT, cl_EE, cl_BB, cl_TE, nside):
     """This routine generates a spin-0 and a spin-2 Gaussian random field based
     on these power spectra. 
     From https://namaster.readthedocs.io/en/latest/source/sample_covariance.html
@@ -50,7 +50,7 @@ def find_ellmin_from_bpw(bpw, ells, threshold):
     return ell_min
 
 
-def produce_gaussian_sims(cl_in, nreal, nside, spin, mask, bin_obj):
+def produce_gaussian_sims(cl_TT, cl_EE, cl_BB, cl_TE, nreal, nside, mask, bin_obj):
 
     # TODO unify with get_sample_field
 
@@ -58,30 +58,25 @@ def produce_gaussian_sims(cl_in, nreal, nside, spin, mask, bin_obj):
     if nside != nside_mask:
         mask = hp.ud_grade(mask, nside_out=nside)
 
-    simulated_cls = []
+    simulated_cls_tt = []
 
     for _ in tqdm(range(nreal)):
-
-        # Generate a Gaussian map using synfast
-        if spin == 0:
-            simulated_maps = [hp.synfast(cl_in, nside)]
-
-        elif spin == 2:
-            # Generate Gaussian map (for spin-2, you'll have two components: E and B modes)
-            simulated_map_e = hp.synfast(cl_in, nside)  # E-mode
-            simulated_map_b = hp.synfast(cl_in, nside)  # B-mode (if needed, or zeros)
-
-            # Combine E and B maps (even if you're working with only E-modes, NaMaster requires both components)
-            simulated_maps = [simulated_map_e, simulated_map_b]
-
-        # Initialize NaMaster field with the masked map
-        field = nmt.NmtField(mask, simulated_maps, spin=spin)
-
+        map_t, map_q, map_u = hp.synfast([cl_TT, cl_EE, cl_BB, cl_TE], nside)
+        map_t *= mask
+        map_q *= mask
+        map_u *= mask
+        f0 = nmt.NmtField(mask, [map_t])
+        # f2 = nmt.NmtField(mask, [map_q, map_u])
+        
         # Compute pseudo-Cl using NaMaster, which will include mode coupling corrections
-        pseudo_cl = nmt.compute_full_master(field, field, bin_obj)
-        simulated_cls.append(pseudo_cl)
+        pseudo_cl_tt = nmt.compute_full_master(f0, f0, bin_obj)
+        # pseudo_cl_te = nmt.compute_full_master(f0, f2, bin_obj)
+        # pseudo_cl_ee = nmt.compute_full_master(f2, f2, bin_obj)
+        simulated_cls_tt.append(pseudo_cl_tt)
+        # simulated_cls_te.append(pseudo_cl_te)
+        # simulated_cls_ee.append(pseudo_cl_ee)
 
-    return np.array(simulated_cls)
+    return np.array(simulated_cls_tt)
 
 
 # ! settings
@@ -322,7 +317,7 @@ if part_sky:
         cl_BB_3D = np.zeros_like(cl_EE_3D)  # Assuming no B-modes
         cl_EB_3D = np.zeros_like(cl_EE_3D)  # Assuming no EB cross-correlation
         f0[zi], f2[zi] = get_sample_field(cl_GG_3D[:, zi, zi], cl_LL_3D[:, zi, zi],
-                                          cl_BB_3D[:, zi, zi], cl_GL_3D[:, zi, zi])
+                                          cl_BB_3D[:, zi, zi], cl_GL_3D[:, zi, zi], nside)
 
     # Create a map(s) from cl(s). To visualize the simulated maps, just for fun
     zi = 0
@@ -605,7 +600,11 @@ if part_sky:
 
     print('Producing gaussian simulations...')
     nreal = 100
-    simulated_cls = produce_gaussian_sims(cl_use, nside=nside, nreal=nreal, spin=spin, mask=mask, bin_obj=bin_obj)
+    simulated_cls = produce_gaussian_sims(cl_GG_3D[:, zi, zi], 
+                                          cl_LL_3D[:, zi, zi], 
+                                          cl_BB_3D[:, zi, zi], 
+                                          cl_GL_3D[:, zi, zi], 
+                                          nside=nside, nreal=nreal, mask=mask, bin_obj=bin_obj)
     simulated_cls = simulated_cls[:, 0, :]
     np.save(
         f'../output/simulated_cls_{block}_nreal{nreal}_nside{nside}_{survey_area_deg2:d}deg2.npy', simulated_cls)
@@ -622,8 +621,8 @@ if part_sky:
 
     plt.figure()
     plt.loglog(cl_use, label='theory cls*fsky')
-    for i in range(nreal):
-        plt.loglog(ells_eff, simulated_cls[i], label='simulated (pseudo) cls, idx [i]')
+    for i in range(nreal[:100:10]):
+        plt.loglog(ells_eff, simulated_cls[i], label=f'simulated (pseudo) cls[i]')
     plt.legend()
     plt.xlabel(r'$\ell$')
     plt.ylabel(r'$C_\ell$')
