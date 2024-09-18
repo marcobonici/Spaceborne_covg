@@ -260,7 +260,7 @@ if part_sky:
     w00.compute_coupling_matrix(f0_mask, f0_mask, bin_obj)
     w02.compute_coupling_matrix(f0_mask, f2_mask, bin_obj)
     w22.compute_coupling_matrix(f2_mask, f2_mask, bin_obj)
-    print(f'done in {(start_time - time.perf_counter()):.2f}s')
+    print(f'done in {(time.perf_counter() - start_time):.2f}s')
 
     # ! Plot bpowers
     # TODO: better understand difference between bpw_00, 02, 22, if any
@@ -309,15 +309,15 @@ if part_sky:
 
     # generate sample fields for the
     # TODO how about the cross-redshifts?
-    f0 = np.empty(zbins, dtype=object)
-    f2 = np.empty(zbins, dtype=object)
-    for zi in range(zbins):
-        # Prepare the power spectra for EE, BB, and EB
-        cl_EE_3D = cl_LL_3D
-        cl_BB_3D = np.zeros_like(cl_EE_3D)  # Assuming no B-modes
-        cl_EB_3D = np.zeros_like(cl_EE_3D)  # Assuming no EB cross-correlation
-        f0[zi], f2[zi] = get_sample_field(cl_GG_3D[:, zi, zi], cl_LL_3D[:, zi, zi],
-                                          cl_BB_3D[:, zi, zi], cl_GL_3D[:, zi, zi], nside)
+    # f0 = np.empty(zbins, dtype=object)
+    # f2 = np.empty(zbins, dtype=object)
+    # for zi in range(zbins):
+    #     # Prepare the power spectra for EE, BB, and EB
+    #     cl_EE_3D = cl_LL_3D
+    #     cl_BB_3D = np.zeros_like(cl_EE_3D)  # Assuming no B-modes
+    #     cl_EB_3D = np.zeros_like(cl_EE_3D)  # Assuming no EB cross-correlation
+    #     f0[zi], f2[zi] = get_sample_field(cl_GG_3D[:, zi, zi], cl_LL_3D[:, zi, zi],
+    #                                       cl_BB_3D[:, zi, zi], cl_GL_3D[:, zi, zi], nside)
 
     # Create a map(s) from cl(s). To visualize the simulated maps, just for fun
     zi = 0
@@ -328,20 +328,20 @@ if part_sky:
     hp.mollview(map_u, title=f'map U, zi={zi}', cmap='inferno_r')
 
     # plot coupling matrix
-    for w, title in [(w00, 'w00_mask'),
-                     (w02, 'w02_mask'),
-                     (w22, 'w22_mask')
-                     ]:
+    # for w, title in [(w00, 'w00_mask'),
+    #                  (w02, 'w02_mask'),
+    #                  (w22, 'w22_mask')
+    #                  ]:
 
-        mixing_matrix = w.get_coupling_matrix()
-        plt.figure(figsize=(10, 8))
-        plt.matshow(np.log10(np.abs(mixing_matrix)))
-        plt.colorbar()
-        plt.xlabel('$\ell$ idx')
-        plt.ylabel('$\ell\'$ idx')
-        plt.title(f'log10 abs {title} mixing matrix')
-        plt.tight_layout()
-        plt.show()
+    #     mixing_matrix = w.get_coupling_matrix()
+    #     plt.figure(figsize=(10, 8))
+    #     plt.matshow(np.log10(np.abs(mixing_matrix)))
+    #     plt.colorbar()
+    #     plt.xlabel('$\ell$ idx')
+    #     plt.ylabel('$\ell\'$ idx')
+    #     plt.title(f'log10 abs {title} mixing matrix')
+    #     plt.tight_layout()
+    #     plt.show()
 
     # Mode - coupling matrix. The matrix will have shape(nrows, nrows), with nrows = n_cls * n_ells,
     # where n_cls is the number of power spectra(1, 2 or 4 for spin 0 - 0, spin 0 - 2
@@ -632,7 +632,8 @@ if part_sky:
 
     label = r'part_sky, $\ell^\prime=\ell+{off_diag:d}$'
     colors = cm.rainbow(np.linspace(0, 1, 4))
-    fig, ax = plt.subplots(2, 1, figsize=(10, 10), sharex=True, gridspec_kw={'wspace': 0, 'hspace': 0})
+    fig, ax = plt.subplots(2, 1, figsize=(10, 10), sharex=True, 
+                           gridspec_kw={'wspace': 0, 'hspace': 0, 'height_ratios': [2, 1]})
     ax[0].set_title(title)
     ax[0].loglog(ells_eff, np.diag(cov_sb), label='full_sky/fsky_mask', marker='.', c='k')
     ax[0].loglog(ells_eff, diag_cov_sims,label='cov from sims$', marker='.', c='purple')
