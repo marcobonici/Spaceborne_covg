@@ -396,7 +396,10 @@ if part_sky:
     # n_cls is the number of power spectra (1, 2 or 4 for spin 0-0, spin 0-2 and spin 2-2 correlations)
     # cov_nmt_3x2pt_GO_10D = np.zeros((n_probes, n_probes, n_probes, n_probes, n_ell, n_ell, zbins, zbins, zbins, zbins))
 
-    zi, zj = 0, 0
+    # ! testing options
+    zi, zj, zk, zl = 0, 0, 0, 0
+    block = 'GGGG'
+    nreal = 5
 
     cl_tt = cl_GG_3D[:, zi, zj]
     cl_te = cl_GL_3D[:, zi, zj]
@@ -581,29 +584,27 @@ if part_sky:
     cov_3x2pt_GO_10D = utils.covariance_einsum(cl_3x2pt_5d, noise_3x2pt_5d, fsky_mask,
                                                ells_eff, delta_ell_eff)
 
-    block = 'GGGG'
     title = f'cov {block}\nsurvey_area = {survey_area_deg2} deg2'
     probe_a, probe_b, probe_c, probe_d = \
         probename_dict[block[0]], probename_dict[block[1]], probename_dict[block[2]], probename_dict[block[3]]
     cov_nmt = cov_nmt_dict[block]
-    cov_sb = cov_3x2pt_GO_10D[probe_a, probe_b, probe_c, probe_d, :, :, 0, 0, 0, 0]
+    cov_sb = cov_3x2pt_GO_10D[probe_a, probe_b, probe_c, probe_d, :, :, zi, zj, zk, zl]
 
     # cov from simulated maps
     if block == 'GGGG':
-        cl_use = cl_GG_3D[:, zi, zi]
+        cl_use = cl_GG_3D[:, zi, zj]
         spin = 0
     elif block == 'GLGL':
-        cl_use = cl_GL_3D[:, zi, zi]
+        cl_use = cl_GL_3D[:, zi, zj]
     elif block == 'LLLL':
         spin = 2
-        cl_use = cl_LL_3D[:, zi, zi]
+        cl_use = cl_LL_3D[:, zi, zj]
 
     print('Producing gaussian simulations...')
-    nreal = 100
-    simulated_cls = produce_gaussian_sims(cl_GG_3D[:, zi, zi], 
-                                          cl_LL_3D[:, zi, zi], 
-                                          cl_BB_3D[:, zi, zi], 
-                                          cl_GL_3D[:, zi, zi], 
+    simulated_cls = produce_gaussian_sims(cl_GG_3D[:, zi, zj], 
+                                          cl_LL_3D[:, zi, zj], 
+                                          cl_BB_3D[:, zi, zj], 
+                                          cl_GL_3D[:, zi, zj], 
                                           nside=nside, nreal=nreal, mask=mask, bin_obj=bin_obj)
     simulated_cls = simulated_cls[:, 0, :]
     np.save(
@@ -751,7 +752,6 @@ if part_sky:
 
     # Plot results
     plt.figure()
-    zi, zj = 0, 0
 
     plt.plot(ells_unbinned[:lmax], cl_GG_3D[:, zi, zj], label=r'Original $C_\ell$')
     plt.plot(ells_eff, cl_GG_3D_binned[:, zi, zj], ls='', c='C1', label=r'Binned $C_\ell$', marker='o', alpha=0.6)
