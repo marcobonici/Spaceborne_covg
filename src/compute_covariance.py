@@ -443,10 +443,10 @@ if part_sky:
     # n_cls is the number of power spectra (1, 2 or 4 for spin 0-0, spin 0-2 and spin 2-2 correlations)
     # cov_nmt_3x2pt_GO_10D = np.zeros((n_probes, n_probes, n_probes, n_probes, n_ell, n_ell, zbins, zbins, zbins, zbins))
 
-    zi, zj = 0, 0
+    # ! testing options
+    zi, zj, zk, zl = 0, 0, 0, 0
     block = 'GGGG'
-    nreal = 10_000
-
+    nreal = 5
 
     cl_tt = cl_GG_3D[:, zi, zj]
     cl_te = cl_GL_3D[:, zi, zj]
@@ -636,7 +636,7 @@ if part_sky:
     probe_a, probe_b, probe_c, probe_d = \
         probename_dict[block[0]], probename_dict[block[1]], probename_dict[block[2]], probename_dict[block[3]]
     cov_nmt = cov_nmt_dict[block]
-    cov_sb = cov_3x2pt_GO_10D[probe_a, probe_b, probe_c, probe_d, :, :, 0, 0, 0, 0]
+    cov_sb = cov_3x2pt_GO_10D[probe_a, probe_b, probe_c, probe_d, :, :, zi, zj, zk, zl]
 
     # cov from simulated maps
     if block == 'GGGG':
@@ -805,7 +805,6 @@ if part_sky:
 
     # Plot results
     plt.figure()
-    zi, zj = 0, 0
 
     plt.plot(ells_unbinned[:lmax], cl_GG_3D[:, zi, zj], label=r'Original $C_\ell$')
     plt.plot(ells_eff, cl_GG_3D_binned[:, zi, zj], ls='', c='C1', label=r'Binned $C_\ell$', marker='o', alpha=0.6)
