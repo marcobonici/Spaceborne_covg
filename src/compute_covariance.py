@@ -444,6 +444,9 @@ if part_sky:
     # cov_nmt_3x2pt_GO_10D = np.zeros((n_probes, n_probes, n_probes, n_probes, n_ell, n_ell, zbins, zbins, zbins, zbins))
 
     zi, zj = 0, 0
+    block = 'GGGG'
+    nreal = 10_000
+
 
     cl_tt = cl_GG_3D[:, zi, zj]
     cl_te = cl_GL_3D[:, zi, zj]
@@ -628,7 +631,7 @@ if part_sky:
     cov_3x2pt_GO_10D = utils.covariance_einsum(cl_3x2pt_5d, noise_3x2pt_5d, fsky_mask,
                                                ells_eff, delta_ell_eff)
 
-    block = 'GGGG'
+    
     title = f'cov {block}\nsurvey_area = {survey_area_deg2} deg2'
     probe_a, probe_b, probe_c, probe_d = \
         probename_dict[block[0]], probename_dict[block[1]], probename_dict[block[2]], probename_dict[block[3]]
@@ -647,19 +650,19 @@ if part_sky:
         cl_use = cl_LL_3D[:, zi, zj]
 
     print('Producing gaussian simulations...')
-    nreal = 2
     simulated_cls_dict = produce_gaussian_sims(cl_GG_3D[:, zi, zi],
                                                cl_LL_3D[:, zi, zi],
                                                cl_BB_3D[:, zi, zi],
                                                cl_GL_3D[:, zi, zi],
                                                nside=nside, nreal=nreal,
                                                mask=mask, bin_obj=bin_obj, 
-                                               load_maps=True)
+                                               load_maps=False)
     simulated_cls = simulated_cls_dict[sim_cl_dict_key][:, 0, :]
     print('...done in {:.2f}s'.format(time.perf_counter() - start_time))
     
-    # np.save(
-        # f'../output/simulated_cls_{block}_nreal{nreal}_nside{nside}_{survey_area_deg2:d}deg2.npy', simulated_cls)
+    np.save(
+        f'../output/simulated_cls_dict_nreal{nreal}_nside{nside}_{survey_area_deg2:d}deg2.npy', simulated_cls_dict, 
+        allow_pickle=True)
 
     sims_mean = np.mean(simulated_cls, axis=0)
     sims_var = np.var(simulated_cls, axis=0)
