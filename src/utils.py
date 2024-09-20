@@ -1168,7 +1168,7 @@ def build_noise(zbins, nProbes, sigma_eps2, ng_shear, ng_clust, EP_or_ED='EP'):
 
     # create and fill N
     N = np.zeros((nProbes, nProbes, zbins, zbins))
-    np.fill_diagonal(N[0, 0, :, :], sigma_eps2 / n_bar_shear)
+    np.fill_diagonal(N[0, 0, :, :], sigma_eps2 / (2 * n_bar_shear))
     np.fill_diagonal(N[1, 1, :, :], 1 / n_bar_clust)
     N[0, 1, :, :] = 0
     N[1, 0, :, :] = 0
