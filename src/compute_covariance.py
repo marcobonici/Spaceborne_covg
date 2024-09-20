@@ -52,7 +52,7 @@ def find_ellmin_from_bpw(bpw, ells, threshold):
     return ell_min
 
 
-def produce_gaussian_sims(cl_TT, cl_EE, cl_BB, cl_TE, nreal, nside, mask, bin_obj, load_maps):
+def produce_gaussian_sims(cl_TT, cl_EE, cl_BB, cl_TE, nreal, nside, mask, load_maps):
 
     # TODO remove monopole from the map before running anafast to reduce boundary effects?
     # TODO this is suggested in anafast documentation
@@ -108,9 +108,9 @@ def produce_gaussian_sims(cl_TT, cl_EE, cl_BB, cl_TE, nreal, nside, mask, bin_ob
         f2 = nmt.NmtField(mask, [map_q, map_u])
 
         # Compute pseudo-Cl using NaMaster, which will include mode coupling corrections
-        pseudo_cl_tt = nmt.compute_full_master(f0, f0, bin_obj)
-        pseudo_cl_te = nmt.compute_full_master(f0, f2, bin_obj)
-        pseudo_cl_ee = nmt.compute_full_master(f2, f2, bin_obj)
+        pseudo_cl_tt = nmt.compute_coupled_cell(f0, f0)
+        pseudo_cl_te = nmt.compute_coupled_cell(f0, f2)
+        pseudo_cl_ee = nmt.compute_coupled_cell(f2, f2)
 
         simulated_cls_tt.append(pseudo_cl_tt)
         simulated_cls_te.append(pseudo_cl_te)
@@ -124,6 +124,90 @@ def produce_gaussian_sims(cl_TT, cl_EE, cl_BB, cl_TE, nreal, nside, mask, bin_ob
     print('...done')
 
     return sim_cls_dict
+
+# def produce_gaussian_sims(cl_TT, cl_EE, cl_BB, cl_TE, nreal, nside, mask, load_maps, batch_size=1000):
+
+#     nside_mask = hp.get_nside(mask)
+#     if nside != nside_mask:
+#         mask = hp.ud_grade(mask, nside_out=nside)
+
+#     if load_maps:
+#         print(f'Loading {nreal} maps for nside {nside} in full-sky')
+#         maps_t = np.load(f"../output/maps_t_fullsky_nreal{nreal}_nside{nside}_z00.npy")
+#         maps_q = np.load(f"../output/maps_q_fullsky_nreal{nreal}_nside{nside}_z00.npy")
+#         maps_u = np.load(f"../output/maps_u_fullsky_nreal{nreal}_nside{nside}_z00.npy")
+#     else:
+#         maps_t, maps_q, maps_u = [], [], []
+
+#     simulated_cls_tt = []
+#     simulated_cls_te = []
+#     simulated_cls_ee = []
+
+#     print(f'Processing {nreal} maps in batches of {batch_size}')
+    
+#     # Process in batches
+#     num_batches = (nreal + batch_size - 1) // batch_size  # Ceiling division
+    
+#     for batch_idx in range(num_batches):
+#         start_idx = batch_idx * batch_size
+#         end_idx = min(start_idx + batch_size, nreal)
+#         print(f'Processing batch {batch_idx + 1}/{num_batches}: simulations {start_idx} to {end_idx}')
+
+#         if not load_maps:
+#             batch_maps_t, batch_maps_q, batch_maps_u = [], [], []
+
+#             # Generate maps for this batch
+#             for _ in tqdm(range(start_idx, end_idx)):
+#                 map_t, map_q, map_u = hp.synfast([cl_TT, cl_EE, cl_BB, cl_TE], nside)
+#                 batch_maps_t.append(map_t)
+#                 batch_maps_q.append(map_q)
+#                 batch_maps_u.append(map_u)
+
+#             # Convert to numpy arrays and append to the full list
+#             batch_maps_t = np.array(batch_maps_t)
+#             batch_maps_q = np.array(batch_maps_q)
+#             batch_maps_u = np.array(batch_maps_u)
+
+#             # Save this batch of maps
+#             np.save(f"../output/maps_t_batch{batch_idx}_nside{nside}_z00.npy", batch_maps_t)
+#             np.save(f"../output/maps_q_batch{batch_idx}_nside{nside}_z00.npy", batch_maps_q)
+#             np.save(f"../output/maps_u_batch{batch_idx}_nside{nside}_z00.npy", batch_maps_u)
+#         else:
+#             batch_maps_t = maps_t[start_idx:end_idx]
+#             batch_maps_q = maps_q[start_idx:end_idx]
+#             batch_maps_u = maps_u[start_idx:end_idx]
+
+#         # Apply mask to map and compute pseudo-Cls
+#         for i in tqdm(range(batch_maps_t.shape[0])):
+#             map_t = batch_maps_t[i] * mask
+#             map_q = batch_maps_q[i] * mask
+#             map_u = batch_maps_u[i] * mask
+
+#             # Initialize fields
+#             f0 = nmt.NmtField(mask, [map_t])
+#             f2 = nmt.NmtField(mask, [map_q, map_u])
+
+#             # Compute pseudo-Cl using NaMaster
+#             pseudo_cl_tt = nmt.compute_coupled_cell(f0, f0)
+#             pseudo_cl_te = nmt.compute_coupled_cell(f0, f2)
+#             pseudo_cl_ee = nmt.compute_coupled_cell(f2, f2)
+
+#             simulated_cls_tt.append(pseudo_cl_tt)
+#             simulated_cls_te.append(pseudo_cl_te)
+#             simulated_cls_ee.append(pseudo_cl_ee)
+
+#         # Save the simulated Cls for this batch
+#         np.save(f"../output/sim_cls_tt_batch{batch_idx}_nside{nside}.npy", simulated_cls_tt)
+#         np.save(f"../output/sim_cls_te_batch{batch_idx}_nside{nside}.npy", simulated_cls_te)
+#         np.save(f"../output/sim_cls_ee_batch{batch_idx}_nside{nside}.npy", simulated_cls_ee)
+
+#         # Clear memory after each batch
+#         simulated_cls_tt = []
+#         simulated_cls_te = []
+#         simulated_cls_ee = []
+
+#     print('All batches processed and saved.')
+
 
 
 # ! settings
@@ -446,7 +530,7 @@ if part_sky:
     # ! testing options
     zi, zj, zk, zl = 0, 0, 0, 0
     block = 'GGGG'
-    nreal = 5
+    nreal = 2
 
     cl_tt = cl_GG_3D[:, zi, zj]
     cl_te = cl_GL_3D[:, zi, zj]
@@ -640,13 +724,13 @@ if part_sky:
 
     # cov from simulated maps
     if block == 'GGGG':
-        sim_cl_dict_key = 'tt'
+        sim_cl_dict_key = 'simulated_cls_tt'
         cl_use = cl_GG_3D[:, zi, zj]
     elif block == 'GLGL':
-        sim_cl_dict_key = 'te'
+        sim_cl_dict_key = 'simulated_cls_te'
         cl_use = cl_GL_3D[:, zi, zj]
     elif block == 'LLLL':
-        sim_cl_dict_key = 'ee'
+        sim_cl_dict_key = 'simulated_cls_ee'
         cl_use = cl_LL_3D[:, zi, zj]
 
     print('Producing gaussian simulations...')
@@ -655,10 +739,11 @@ if part_sky:
                                                cl_BB_3D[:, zi, zi],
                                                cl_GL_3D[:, zi, zi],
                                                nside=nside, nreal=nreal,
-                                               mask=mask, bin_obj=bin_obj, 
+                                               mask=mask, 
                                                load_maps=False)
-    simulated_cls = simulated_cls_dict[sim_cl_dict_key][:, 0, :]
     print('...done in {:.2f}s'.format(time.perf_counter() - start_time))
+    
+    simulated_cls = simulated_cls_dict[sim_cl_dict_key]
     
     np.save(
         f'../output/simulated_cls_dict_nreal{nreal}_nside{nside}_{survey_area_deg2:d}deg2.npy', simulated_cls_dict, 
