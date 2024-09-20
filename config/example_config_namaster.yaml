@@ -54,9 +54,9 @@ covariance_ordering_2D: "probe_zpair_ell" # must be one of ['probe_ell_zpair', '
 plot_covariance_2D: False # whether to plot (the log10 of) the 2D covariance matrix
 
 # path to 3d numpy Cls. If part_sky is True, it has to be the unbinned Cl's from ell_min = 0 to ell_max = 3*NSIDE (or 2*NSIDE, to check)
-cl_LL_3D_path: "/home/davide/Documenti/Lavoro/Programmi/common_data/sylvain/Spaceborne_partialsky_inputs/Cl_LL_unbinned.npy"
-cl_GL_3D_path: "/home/davide/Documenti/Lavoro/Programmi/common_data/sylvain/Spaceborne_partialsky_inputs/Cl_GL_unbinned.npy"
-cl_GG_3D_path: "/home/davide/Documenti/Lavoro/Programmi/common_data/sylvain/Spaceborne_partialsky_inputs/Cl_GG_unbinned.npy"
+cl_LL_3D_path: "{ROOT:s}/Spaceborne_covg/input/Cl_LL_unbinned.npy"
+cl_GL_3D_path: "{ROOT:s}/Spaceborne_covg/input/Cl_GL_unbinned.npy"
+cl_GG_3D_path: "{ROOT:s}/Spaceborne_covg/input/Cl_GG_unbinned.npy"
 
 # Pseudo-Cl covariance
 # If False will compute the full-sky covariance (divided by fsky).
@@ -64,7 +64,7 @@ cl_GG_3D_path: "/home/davide/Documenti/Lavoro/Programmi/common_data/sylvain/Spac
 part_sky: True
 
 # path to NaMaster workspace
-workspace_path: /home/davide/Documenti/Lavoro/Programmi/common_data/sylvain/Spaceborne_partialsky_inputs/fullsky_NmtWorkspace_NS32_LMIN10_BW5.fits
+workspace_path: "{ROOT:s}/Spaceborne_covg/input/fullsky_NmtWorkspace_NS32_LMIN10_BW5.fits"
 
 # path to mask
 mask_path: /home/davide/Documenti/Lavoro/Programmi/CSSTforecasts/mask_nside4096/map_area_only.npy
