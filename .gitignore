@@ -155,3 +155,4 @@ cython_debug/
 *.iml
 
 input/*
+src/sigma_cl_comp.png
