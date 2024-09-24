@@ -15,16 +15,23 @@ ROOT = os.getenv("ROOT")
 
 def get_sample_field(cl_TT, cl_EE, cl_BB, cl_TE, nside):
     """This routine generates a spin-0 and a spin-2 Gaussian random field based
-    on these power spectra. 
+    on these power spectra.
     From https://namaster.readthedocs.io/en/latest/source/sample_covariance.html
     """
     map_t, map_q, map_u = hp.synfast([cl_TT, cl_EE, cl_BB, cl_TE], nside)
-    return nmt.NmtField(mask, [map_t]), nmt.NmtField(mask, [map_q, map_u])
+    return nmt.NmtField(mask, [map_t], lite=False), nmt.NmtField(mask, [map_q, map_u], lite=False)
 
 
 def compute_master(f_a, f_b, wsp):
     """This function computes power spectra given a pair of fields and a workspace.
-    From https://namaster.readthedocs.io/en/latest/source/sample_covariance.html"""
+    From https://namaster.readthedocs.io/en/latest/source/sample_covariance.html
+    NOTE THAT nmt.compute_full_master() does:
+    NmtWorkspace.compute_coupling_matrix
+    deprojection_bias
+    compute_coupled_cell
+    NmtWorkspace.decouple_cell
+    and gives perfectly consistent results!
+    """
     cl_coupled = nmt.compute_coupled_cell(f_a, f_b)
     cl_decoupled = wsp.decouple_cell(cl_coupled)
     return cl_decoupled
@@ -59,8 +66,8 @@ def produce_gaussian_sims(cl_TT, cl_EE, cl_BB, cl_TE, nreal, nside, mask, load_m
 
     # nside_mask = hp.get_nside(mask)
     # if nside != nside_mask:
-        # mask = hp.ud_grade(mask, nside_out=nside)
-        
+    # mask = hp.ud_grade(mask, nside_out=nside)
+
     assert which_pseudo_cls in ['namaster', 'healpy'], 'which_pseudo_cls must be namaster or healpy'
 
     pseudo_cl_tt_list = []
@@ -100,36 +107,34 @@ def produce_gaussian_sims(cl_TT, cl_EE, cl_BB, cl_TE, nreal, nside, mask, load_m
     print('Applying mask to map and computing pseudo-cls...')
     for _ in tqdm(range(nreal)):
 
-        # multiply by mask
-        map_t *= mask
-        map_q *= mask
-        map_u *= mask
-
         if which_pseudo_cls == 'namster':
             # initialize fields
-            f0 = nmt.NmtField(mask, [map_t])
-            f2 = nmt.NmtField(mask, [map_q, map_u])
+            f0 = nmt.NmtField(mask, [map_t], lite=True)
+            f2 = nmt.NmtField(mask, [map_q, map_u], lite=True)
 
             # Compute pseudo-Cl using NaMaster, which will include mode coupling corrections
             pseudo_cl_tt = nmt.compute_coupled_cell(f0, f0)
             pseudo_cl_te = nmt.compute_coupled_cell(f0, f2)
             pseudo_cl_ee = nmt.compute_coupled_cell(f2, f2)
-        
+
         elif which_pseudo_cls == 'healpy':
+            # multiply by mask
+            map_t *= mask
+            map_q *= mask
+            map_u *= mask
             pseudo_cl_hp_tot = hp.anafast([map_t, map_q, map_u])
             pseudo_cl_tt = pseudo_cl_hp_tot[0, :]
             pseudo_cl_ee = pseudo_cl_hp_tot[1, :]
             pseudo_cl_te = pseudo_cl_hp_tot[3, :]
-
 
         pseudo_cl_tt_list.append(pseudo_cl_tt)
         pseudo_cl_te_list.append(pseudo_cl_te)
         pseudo_cl_ee_list.append(pseudo_cl_ee)
 
         sim_cls_dict = {
-            'pseudo_cl_tt': pseudo_cl_tt_list,
-            'pseudo_cl_te': pseudo_cl_te_list,
-            'pseudo_cl_ee': pseudo_cl_ee_list,
+            'pseudo_cl_tt': np.array(pseudo_cl_tt_list),
+            'pseudo_cl_te': np.array(pseudo_cl_te_list),
+            'pseudo_cl_ee': np.array(pseudo_cl_ee_list),
         }
     print('...done')
 
@@ -274,13 +279,14 @@ if part_sky:
     nside = cfg['nside']
 
     # read or generate mask
-    
-    if mask_path.endswith('.fits'):
-        mask = hp.read_map(mask_path)
-    elif mask_path.endswith('.npy'):
-        mask = np.load(mask_path)
-    mask = hp.ud_grade(mask, nside_out=nside)
-    # mask = utils.generate_polar_cap(area_deg2=survey_area_deg2, nside=cfg['nside'])
+    if cfg['read_mask']:
+        if mask_path.endswith('.fits'):
+            mask = hp.read_map(mask_path)
+        elif mask_path.endswith('.npy'):
+            mask = np.load(mask_path)
+        mask = hp.ud_grade(mask, nside_out=nside)
+    else:
+        mask = utils.generate_polar_cap(area_deg2=survey_area_deg2, nside=cfg['nside'])
 
     # plot/apodize
     hp.mollview(mask, coord=['G', 'C'], title='before apodization', cmap='inferno_r')
@@ -294,6 +300,7 @@ if part_sky:
     # assert np.isclose(fsky_mask, fsky, atol=0, rtol=2e-1), 'fsky from mask does not match with fsky within 10%'
     assert nside_from_mask == cfg['nside'], 'nside from mask is not consistent with the desired nside in the cfg file'
     fsky = fsky_mask
+    survey_area_deg2 = fsky * utils.DEG2_IN_SPHERE
 
     # set different possible values for lmax
     lmax_mask = int(np.pi / hp.pixelfunc.nside2resol(nside))
@@ -301,7 +308,6 @@ if part_sky:
     # to be safe, following https://heracles.readthedocs.io/stable/examples/example.html
     lmax_healpy_safe = int(1.5 * nside)  # TODO test this
     lmax = lmax_healpy
-    
 
     # get lmin: quick estimate
     survey_area_rad = np.sum(mask) * hp.nside2pixarea(nside)
@@ -313,7 +319,7 @@ if part_sky:
     # bin_obj = nmt.NmtBin.from_lmax_linear(lmax_mask, ells_per_band)
     bin_obj = nmt.NmtBin.from_nside_linear(nside, ells_per_band, is_Dell=False)
     # bin_obj = nmt.NmtBin.from_lmax_linear(lmax=lmax, nlb=ells_per_band, is_Dell=False, f_ell=None) # TODO test this
-    
+
     ells_eff = bin_obj.get_effective_ells()  # get effective ells per bandpower
     ells_eff_int = ells_eff.astype(int)
 
@@ -321,8 +327,8 @@ if part_sky:
     # TODO maks=None (as in the example) or maps=[mask]? I think None
     start_time = time.perf_counter()
     print('computing coupling coefficients...')
-    f0_mask = nmt.NmtField(mask=mask, maps=None, spin=0)
-    f2_mask = nmt.NmtField(mask=mask, maps=None, spin=2)
+    f0_mask = nmt.NmtField(mask=mask, maps=None, spin=0, lite=True)
+    f2_mask = nmt.NmtField(mask=mask, maps=None, spin=2, lite=True)
     w00 = nmt.NmtWorkspace()
     w02 = nmt.NmtWorkspace()
     w22 = nmt.NmtWorkspace()
@@ -334,7 +340,7 @@ if part_sky:
     # ! Plot bpowers
     # TODO: better understand difference between bpw_00, 02, 22, if any
     # TODO: better understand lmin estimate (I could do it direcly from bin_obj...)
-    ells = np.arange(lmax)
+    ells_tot = np.arange(lmax)
 
     # Get bandpower window functions. Convolve the theory power spectra with these as an alternative to the combination
     # of function calls w.decouple_cell(w.couple_cell(cls_theory))
@@ -343,16 +349,21 @@ if part_sky:
     bpw_22 = w22.get_bandpower_windows()
 
     # Plotting bandpower windows and ell_min
-    n_ell = bpw_00.shape[-1]
-    ell_plot = np.arange(n_ell)
-    lmin_bpw = find_ellmin_from_bpw(bpw_00, ells=ells, threshold=0.95)
+    nbl = bpw_00.shape[1]
+    lmin_bpw = find_ellmin_from_bpw(bpw_00, ells=ells_tot, threshold=0.95)
+    ells_eff_edges = np.array([bin_obj.get_ell_list(i)[0] for i in range(nbl)])
+    ells_eff_edges = np.append(ells_eff_edges, bin_obj.get_ell_list(nbl - 1)[-1])
 
     colors = cm.rainbow(np.linspace(0, 1, bpw_00.shape[1]))
     plt.figure(figsize=(10, 6))
-    for i in range(bpw_02.shape[1]):
-        plt.plot(ell_plot, bpw_00[0, i, 0, :], c=colors[i], label='bpw_00' if i == 0 else '')
-        plt.plot(ell_plot, bpw_02[0, i, 0, :], c=colors[i], ls=':', label='bpw_02' if i == 0 else '')
-        plt.plot(ell_plot, bpw_22[0, i, 0, :], c=colors[i], ls='--', label='bpw_22' if i == 0 else '')
+    for i in range(nbl):
+        plt.plot(ells_tot, bpw_00[0, i, 0, :], c=colors[i], label='bpw_00' if i == 0 else '')
+        plt.plot(ells_tot, bpw_02[0, i, 0, :], c=colors[i], ls=':', label='bpw_02' if i == 0 else '')
+        plt.plot(ells_tot, bpw_22[0, i, 0, :], c=colors[i], ls='--', label='bpw_22' if i == 0 else '')
+
+    # ell edges
+    for i in range(nbl + 1):
+        plt.axvline(ells_eff_edges[i], c='k', ls='--')
 
     plt.axvline(lmin_bpw, color='r', linestyle='--', label='Estimated ell_min')
     plt.xlabel(r'$\ell$')
@@ -414,7 +425,7 @@ if part_sky:
 
     #     mixing_matrix = w.get_coupling_matrix()
     #     plt.figure(figsize=(10, 8))
-    #     plt.matshow(np.log10(np.abs(mixing_matrix)))
+    #     plt.matshow(np.log10(np.fabs(mixing_matrix)))
     #     plt.colorbar()
     #     plt.xlabel('$\ell$ idx')
     #     plt.ylabel('$\ell\'$ idx')
@@ -424,47 +435,57 @@ if part_sky:
 
     # Compute spectra
     # TODO add noise?
-    pseudo_cl_GG = np.array([[nmt.compute_full_master(f0[zi], f0[zj], bin_obj) for zi in range(1)] for zj in range(1)])
-    pseudo_cl_GL = np.array([[nmt.compute_full_master(f0[zi], f2[zj], bin_obj) for zi in range(1)] for zj in range(1)])
-    pseudo_cl_LL = np.array([[nmt.compute_full_master(f2[zi], f2[zj], bin_obj) for zi in range(1)] for zj in range(1)])
+    # * compute_master is probably much faster!
+    master_cl_GG = np.array([[nmt.compute_full_master(f0[zi], f0[zj], bin_obj) for zi in range(1)] for zj in range(1)])
+    master_cl_GL = np.array([[nmt.compute_full_master(f0[zi], f2[zj], bin_obj) for zi in range(1)] for zj in range(1)])
+    master_cl_LL = np.array([[nmt.compute_full_master(f2[zi], f2[zj], bin_obj) for zi in range(1)] for zj in range(1)])
 
-    pseudo_cl_GG_coupled = np.array([[nmt.compute_coupled_cell(f0[zi], f0[zj]) for zi in range(1)] for zj in range(1)])
-    pseudo_cl_GL_coupled = np.array([[nmt.compute_coupled_cell(f0[zi], f2[zj]) for zi in range(1)] for zj in range(1)])
-    pseudo_cl_LL_coupled = np.array([[nmt.compute_coupled_cell(f2[zi], f2[zj]) for zi in range(1)] for zj in range(1)])
+    # Effectively, this is equivalent to calling the usual HEALPix anafast routine on the masked and contaminant-cleaned maps.
+    nmt_pcl_GG = np.array([[nmt.compute_coupled_cell(f0[zi], f0[zj]) for zi in range(1)] for zj in range(1)])
+    nmt_pcl_GL = np.array([[nmt.compute_coupled_cell(f0[zi], f2[zj]) for zi in range(1)] for zj in range(1)])
+    nmt_pcl_LL = np.array([[nmt.compute_coupled_cell(f2[zi], f2[zj]) for zi in range(1)] for zj in range(1)])
 
     # TODO better understand third dimension
     # pseudo_cl_GL[zi, zi, 0, :] matches cl_LL_3D[zi, zi, :]
     # pseudo_cl_LL[zi, zi, 1&2, :] are very close to 0 (BE, EB?)
     # pseudo_cl_LL[zi, zi, 3, :] is the closest to cl_LL_3D[zi, zi, :]
 
+    # healpy coupled cls
     # from https://stackoverflow.com/questions/54775777/how-does-anafast-take-care-of-masking-in-healpy
     # masked_map = np.where(mask, map_t, hp.UNSEEN)
     # pseudo_cl_GG_hp_2 = hp.anafast(masked_map)
 
+    map_t = hp.remove_monopole(map_t)
+    map_q = hp.remove_monopole(map_q)
+    map_u = hp.remove_monopole(map_u)
 
-    pseudo_cl_hp_tot = hp.anafast([map_t * mask, map_q * mask, map_u * mask])
-    pseudo_cl_GG_hp = pseudo_cl_hp_tot[0, :]
-    pseudo_cl_LL_hp = pseudo_cl_hp_tot[1, :]
-    pseudo_cl_GL_hp = pseudo_cl_hp_tot[3, :]
+    # If needed, remove dipole as well (optional)
+    map_t = hp.remove_dipole(map_t)
+    map_q = hp.remove_dipole(map_q)
+    map_u = hp.remove_dipole(map_u)
 
-    block = 'LLLL'
+    hp_pcl_tot = hp.anafast([map_t * mask, map_q * mask, map_u * mask])
+    hp_pcl_GG = hp_pcl_tot[0, :]
+    hp_pcl_LL = hp_pcl_tot[1, :]
+    hp_pcl_GL = hp_pcl_tot[3, :]
+
+    block = 'GGGG'
 
     if block == 'GGGG':
-        pseudo_cl_hp = pseudo_cl_GG_hp
-        pseudo_cl_coupled = pseudo_cl_GG_coupled
-        pseudo_cl = pseudo_cl_GG
+        hp_pcl = hp_pcl_GG
+        nmt_pcl = nmt_pcl_GG
+        master_cl = master_cl_GG
         cl_theory = cl_GG_3D
         noise_idx = 0
         mm_gg = w00.get_coupling_matrix()
         pseudo_cl_dav = np.einsum('ij,jkl->ikl', mm_gg, cl_GG_3D)
     elif block == 'LLLL':
-        pseudo_cl_hp = pseudo_cl_LL_hp
-        pseudo_cl_coupled = pseudo_cl_LL_coupled
-        pseudo_cl = pseudo_cl_LL
+        hp_pcl = hp_pcl_LL
+        nmt_pcl = nmt_pcl_LL
+        master_cl = master_cl_LL
         cl_theory = cl_LL_3D
         noise_idx = 1
 
-    # %matplotlib qt
     plt.figure(figsize=(8, 6))
     colors = cm.rainbow(np.linspace(0, 1, zbins))
     for zi in range(1):
@@ -472,18 +493,18 @@ if part_sky:
         # theory_plus_noise = cl_theory[ells_eff_int, zi, zi] + noise_3x2pt_5D[noise_idx, noise_idx, ells_eff_int, zi, zi]
         # plt.plot(ells_eff_int, theory_plus_noise, label=f'th minus noise, zi={zi}', color='purple')
 
-        plt.plot(pseudo_cl_hp, label=f'pseudo-cl hp zi={zi}', alpha=.7, ls='-')
-        plt.plot(pseudo_cl_coupled[zi, zi, 0, :], label=f'coupled pseudo-cl[0] zi={zi}', alpha=.7, ls='-')
-        plt.plot(ells_eff, pseudo_cl[zi, zi, 0, :], label=f'pseudo-cl zi={zi}', alpha=.7, ls='--')
-        # plt.plot(pseudo_cl_dav[:, zi, zi], label=f'pseudo-cl[0] dav, zi={zi}', alpha=.7, ls='--')
+        plt.plot(hp_pcl, label=f'hp pseudo-cl zi={zi}', alpha=.7)
+        plt.plot(nmt_pcl[zi, zi, 0, :], label=f'nmt pseudo-cl[0] zi={zi}', alpha=.7)
+        plt.plot(ells_eff, master_cl[zi, zi, 0, :], label=f'MASTER-cl zi={zi}', alpha=.7, marker='.')
+        plt.plot(pseudo_cl_dav[:, zi, zi], label=f'man. pseudo-cl, zi={zi}', alpha=.7)
 
         plt.scatter(ells_eff, cl_theory[ells_eff_int, zi, zi], marker='.', label=f'th cls, zi={zi}')
         plt.scatter(ells_eff, cl_theory[ells_eff_int, zi, zi]
                     * fsky, marker='.', label=f'th cls*fsky, zi={zi}')
 
-
     plt.xlabel(r'$\ell$')
     plt.xlim(-20, 1600)
+    plt.axvline(lmax_healpy_safe, color='k', ls='--', label='1.5 * nside', alpha=.7)
     plt.yscale('log')
     plt.legend()
     plt.ylabel(r'$C_\ell$')
@@ -507,7 +528,7 @@ if part_sky:
     # ! this is just a quick test
     assert w00.get_bandpower_windows().shape[1] == w02.get_bandpower_windows().shape[1] == \
         w22.get_bandpower_windows().shape[1], "The number of bandpower windows must be the same for all fields"
-    n_ell = w00.get_bandpower_windows().shape[1]
+    nbl = w00.get_bandpower_windows().shape[1]
     # shape: (n_cls, n_bpws, n_cls, lmax+1)
     # n_cls is the number of power spectra (1, 2 or 4 for spin 0-0, spin 0-2 and spin 2-2 correlations)
     # cov_nmt_3x2pt_GO_10D = np.zeros((n_probes, n_probes, n_probes, n_probes, n_ell, n_ell, zbins, zbins, zbins, zbins))
@@ -515,7 +536,7 @@ if part_sky:
     # ! testing options
     zi, zj, zk, zl = 0, 0, 0, 0
     block = 'GGGG'
-    nreal = 2
+    nreal = 10
 
     cl_tt = cl_GG_3D[:, zi, zj]
     cl_te = cl_GL_3D[:, zi, zj]
@@ -539,8 +560,8 @@ if part_sky:
                                           [cl_tt],  # TT
                                           [cl_tt],  # TT
                                           [cl_tt],  # TT
-                                          wa=w00, wb=w00).reshape([n_ell, 1,
-                                                                   n_ell, 1])
+                                          wa=w00, wb=w00).reshape([nbl, 1,
+                                                                   nbl, 1])
     covar_TT_TT = covar_00_00[:, 0, :, 0]
 
     # TODO start - check this better - still new
@@ -550,8 +571,8 @@ if part_sky:
                                           [cl_te, cl_tb],  # TE, TB
                                           [cl_tt],  # TT
                                           [cl_te, cl_tb],  # TE, TB
-                                          wa=w00, wb=w02).reshape([n_ell, 1,
-                                                                   n_ell, 2])
+                                          wa=w00, wb=w02).reshape([nbl, 1,
+                                                                   nbl, 2])
     covar_TT_TE = covar_00_02[:, 0, :, 0]
     covar_TT_TB = covar_00_02[:, 0, :, 1]
     # TODO end - check this better - still new
@@ -563,8 +584,8 @@ if part_sky:
                                           [cl_te, cl_tb],  # ET, BT
                                           [cl_ee, cl_eb,
                                            cl_eb, cl_bb],  # EE, EB, BE, BB
-                                          wa=w02, wb=w02).reshape([n_ell, 2,
-                                                                   n_ell, 2])
+                                          wa=w02, wb=w02).reshape([nbl, 2,
+                                                                   nbl, 2])
     covar_TE_TE = covar_02_02[:, 0, :, 0]
     covar_TE_TB = covar_02_02[:, 0, :, 1]
     covar_TB_TE = covar_02_02[:, 1, :, 0]
@@ -576,8 +597,8 @@ if part_sky:
                                           [cl_te, cl_tb],  # TE, TB
                                           [cl_te, cl_tb],  # TE, TB
                                           [cl_te, cl_tb],  # TE, TB
-                                          wa=w00, wb=w22).reshape([n_ell, 1,
-                                                                   n_ell, 4])
+                                          wa=w00, wb=w22).reshape([nbl, 1,
+                                                                   nbl, 4])
     covar_TT_EE = covar_00_22[:, 0, :, 0]
     covar_TT_EB = covar_00_22[:, 0, :, 1]
     covar_TT_BE = covar_00_22[:, 0, :, 2]
@@ -591,8 +612,8 @@ if part_sky:
                                            cl_eb, cl_bb],  # EE, EB, BE, BB
                                           [cl_ee, cl_eb,
                                            cl_eb, cl_bb],  # EE, EB, BE, BB
-                                          wa=w02, wb=w22).reshape([n_ell, 2,
-                                                                   n_ell, 4])
+                                          wa=w02, wb=w22).reshape([nbl, 2,
+                                                                   nbl, 4])
     covar_TE_EE = covar_02_22[:, 0, :, 0]
     covar_TE_EB = covar_02_22[:, 0, :, 1]
     covar_TE_BE = covar_02_22[:, 0, :, 2]
@@ -612,8 +633,8 @@ if part_sky:
                                            cl_eb, cl_bb],  # EE, EB, BE, BB
                                           [cl_ee, cl_eb,
                                            cl_eb, cl_bb],  # EE, EB, BE, BB
-                                          wa=w22, wb=w22).reshape([n_ell, 4,
-                                                                   n_ell, 4])
+                                          wa=w22, wb=w22).reshape([nbl, 4,
+                                                                   nbl, 4])
 
     covar_EE_EE = covar_22_22[:, 0, :, 0]
     covar_EE_EB = covar_22_22[:, 0, :, 1]
@@ -696,13 +717,11 @@ if part_sky:
     cl_3x2pt_5d[1, 1, :, :, :] = cl_GG_use
     noise_3x2pt_5d = np.zeros_like(cl_3x2pt_5d)
 
-    delta_ell_eff = np.diff(ells_eff)
-    delta_ell_eff = np.ones_like(ells_eff) * delta_ell_eff[0]
+    delta_ell_eff = bin_obj.get_nell_list()
 
     cov_3x2pt_GO_10D = utils.covariance_einsum(cl_3x2pt_5d, noise_3x2pt_5d, fsky_mask,
                                                ells_eff, delta_ell_eff)
 
-    
     title = f'cov {block}\nsurvey_area = {survey_area_deg2} deg2'
     probe_a, probe_b, probe_c, probe_d = \
         probename_dict[block[0]], probename_dict[block[1]], probename_dict[block[2]], probename_dict[block[3]]
@@ -711,31 +730,39 @@ if part_sky:
 
     # TODO try with this:
     print("Sample covariance")
-    nsamp = 80
+    nsamp = 5
     zi = 0
-    covar_sample_gg = np.zeros([n_ell, n_ell])
-    covar_sample_ll = np.zeros([n_ell, n_ell])
-    mean_sample_gg = np.zeros(n_ell)
-    mean_sample_ll = np.zeros(n_ell)
-    for i in np.arange(nsamp):
-        print(i)
-        f0, f2 =  get_sample_field(cl_TT=cl_GG_3D[:, zi, zi],
-                                          cl_EE=cl_LL_3D[:, zi, zi],
-                                          cl_BB=cl_BB_3D[:, zi, zi],
-                                          cl_TE=cl_GL_3D[:, zi, zi],
-                                          nside=nside)
+    covar_sample_gg = np.zeros([nbl, nbl])
+    covar_sample_ll = np.zeros([nbl, nbl])
+    mean_sample_gg = np.zeros(nbl)
+    cl_gg_list_test = []
+    mean_sample_ll = np.zeros(nbl)
+    for i in tqdm(np.arange(nsamp)):
+        f0, f2 = get_sample_field(cl_TT=cl_GG_3D[:, zi, zi],
+                                  cl_EE=cl_LL_3D[:, zi, zi],
+                                  cl_BB=cl_BB_3D[:, zi, zi],
+                                  cl_TE=cl_GL_3D[:, zi, zi],
+                                  nside=nside)
         cl_gg = compute_master(f0, f0, w00)[0]
         cl_ll = compute_master(f2, f2, w22)[0]
+        cl_gg_list_test.append(cl_gg)
+
         covar_sample_gg += cl_gg[None, :] * cl_gg[:, None]
         covar_sample_ll += cl_ll[None, :] * cl_ll[:, None]
         mean_sample_gg += cl_gg
         mean_sample_ll += cl_ll
+
     mean_sample_gg /= nsamp
     mean_sample_ll /= nsamp
     covar_sample_gg = covar_sample_gg / nsamp
     covar_sample_ll = covar_sample_ll / nsamp
     covar_sample_gg -= mean_sample_gg[None, :] * mean_sample_gg[:, None]
     covar_sample_ll -= mean_sample_ll[None, :] * mean_sample_ll[:, None]
+
+    # excellent agreement for bias=True
+    # cl_gg_list_test = np.array(cl_gg_list_test)
+    # cov_gg_test = np.cov(cl_gg_list_test, rowvar=False, bias=True)
+    # np.testing.assert_allclose(cov_gg_test, covar_sample_gg, atol=0, rtol=1e-2)
 
     # Let's plot the error bars (first and second diagonals)
     l_mid = 0.5 * (ells_eff[1:] + ells_eff[:-1])
@@ -755,7 +782,7 @@ if part_sky:
     plt.xscale('log')
     plt.legend(fontsize=12, frameon=False)
     plt.show()
-    
+
     plt.figure()
     plt.title('LL')
     plt.plot(ells_eff, np.sqrt(np.diag(covar_EE_EE)),
@@ -776,13 +803,13 @@ if part_sky:
 
     # cov from simulated maps
     if block == 'GGGG':
-        sim_cl_dict_key = 'tt'
+        sim_cl_dict_key = 'pseudo_cl_tt'
         cl_use = cl_GG_3D[:, zi, zj]
     elif block == 'GLGL':
-        sim_cl_dict_key = 'te'
+        sim_cl_dict_key = 'pseudo_cl_te'
         cl_use = cl_GL_3D[:, zi, zj]
     elif block == 'LLLL':
-        sim_cl_dict_key = 'ee'
+        sim_cl_dict_key = 'pseudo_cl_ee'
         cl_use = cl_LL_3D[:, zi, zj]
 
     print('Producing gaussian simulations...')
@@ -791,35 +818,49 @@ if part_sky:
                                                cl_BB_3D[:, zi, zi],
                                                cl_GL_3D[:, zi, zi],
                                                nside=nside, nreal=nreal,
-                                               mask=mask, 
+                                               mask=mask,
                                                load_maps=False,
                                                which_pseudo_cls='healpy')
-    simulated_cls = simulated_cls_dict[sim_cl_dict_key][:, 0, :]
-    print('...done in {:.2f}s'.format(time.perf_counter() - start_time))
-    
-    np.save(
-        f'../output/simulated_cls_dict_nreal{nreal}_nside{nside}_{survey_area_deg2:d}deg2.npy', simulated_cls_dict, 
-        allow_pickle=True)
 
+    print('...done in {:.2f}s'.format(time.perf_counter() - start_time))
+
+    simulated_cls = simulated_cls_dict[sim_cl_dict_key]
+    # elif block == 'GLGL':
+    # simulated_cls = simulated_cls_dict[sim_cl_dict_key][:, 0, :]
+    # elif block == 'LLLL':
+    # simulated_cls = simulated_cls_dict[sim_cl_dict_key][:, 0, :]
+
+    # np.save(
+    #     f'../output/simulated_cls_dict_nreal{nreal}_nside{nside}_{survey_area_deg2:d}deg2.npy', simulated_cls_dict,
+    #     allow_pickle=True)
+    
     sims_mean = np.mean(simulated_cls, axis=0)
     sims_var = np.var(simulated_cls, axis=0)
     cov_sim = np.cov(simulated_cls, rowvar=False)
 
-    plt.matshow(np.log10(np.abs(cov_sim)))
-    plt.colorbar()
-    plt.title(f'simulated cov, nreal={nreal}')
-
+    # plot simulated (pseudo-) cls
     plt.figure()
-    plt.loglog(cl_use, label='theory cls*fsky')
-    for i in range(nreal[:100:10]):
-        plt.loglog(ells_eff, simulated_cls[i], label=f'simulated (pseudo) cls[i]')
+    for i in range(nreal)[:100:10]:
+        plt.loglog(simulated_cls[i], label=f'simulated (pseudo) cls[i]')
+    plt.loglog(cl_use * fsky, label='theory cls*fsky', c='red')
     plt.legend()
     plt.xlabel(r'$\ell$')
     plt.ylabel(r'$C_\ell$')
 
+    # bin the simulated covariance to compare it with the other ones
+    cov_sims_binned = utils.bin_2d_matrix(cov=cov_sim, ells_in=ells_tot, 
+                                     ells_out=ells_eff_int, ells_out_edges=ells_eff_edges)
+    
+    colors = cm.rainbow(np.linspace(0, 1, 5))
+    for k in range(1):
+        plt.semilogy(ells_tot[k:], np.fabs(np.diag(cov_sim, k=k)), c=colors[k])
+        plt.semilogy(ells_eff_int[k:], np.fabs(np.diag(cov_sims_binned, k=k)), c='red', marker='o')
+
+
+
     # ! plot diagonal, for zi = zj = zk = zl = 0
     # no delta_ell if you're using the pseudo-cls in the gaussian_simulations func!!
-    diag_cov_sims = np.diag(cov_sim)
+    diag_cov_sims = np.diag(cov_sim)[ells_eff_int]
 
     label = r'part_sky, $\ell^\prime=\ell+{off_diag:d}$'
     colors = cm.rainbow(np.linspace(0, 1, 4))
@@ -830,29 +871,36 @@ if part_sky:
     ax[0].loglog(ells_eff, diag_cov_sims, label='cov from sims$', marker='.', c='purple')
     ax[0].loglog(ells_eff, np.diag(cov_nmt), label=r'part_sky, $\ell^\prime=\ell$', marker='.', alpha=0.7)
 
-    for k in range(1, 4):
-        diag_nmt = np.diag(cov_nmt, k=k)
-        diag_sim = np.diag(cov_sim, k=k)
-        ls_nmt = '--' if np.all(diag_nmt < 0) else '-'
-        ls_sim = '--' if np.all(diag_sim < 0) else '-'
-        # diag_nmt = np.abs(diag_nmt) if np.all(diag_nmt < 0) else diag_nmt
-        # diag_sim = np.abs(diag_sim) if np.all(diag_sim < 0) else diag_sim
-        diag_nmt = np.abs(diag_nmt)
-        diag_sim = np.abs(diag_sim)
-        ax[0].loglog(ells_eff[:-k], diag_nmt, label=label.format(off_diag=k), marker='.', ls=ls_nmt, c=colors[k])
-        ax[0].loglog(ells_eff[:-k], diag_sim, marker='*', ls=ls_sim, c=colors[k])
+    # for k in range(4):
+    #     diag_nmt = np.diag(cov_nmt, k=k)
+    #     diag_sim = np.diag(cov_sim, k=k)
+
+    #     l_mid = 0.5 * (ells_eff[k:] + ells_eff[:-k])
+    #     l_mid_tot = 0.5 * (ells_tot[k:] + ells_tot[:-k])
+    #     ls_nmt = '--' if np.all(diag_nmt < 0) else '-'
+    #     ls_sim = '--' if np.all(diag_sim < 0) else '-'
+    #     # diag_nmt = np.fabs(diag_nmt) if np.all(diag_nmt < 0) else diag_nmt
+    #     # diag_sim = np.fabs(diag_sim) if np.all(diag_sim < 0) else diag_sim
+    #     diag_nmt = np.fabs(diag_nmt)
+    #     diag_sim = np.fabs(diag_sim)
+    #     ax[0].semilogy(l_mid, diag_nmt, label=label.format(off_diag=k), marker='.', ls=ls_nmt, c=colors[k])
+    #     ax[0].semilogy(l_mid_tot, diag_sim, marker='', ls=ls_sim, c=colors[k], alpha=0.7)
 
     ax[0].set_ylabel('diag cov')
     ax[0].legend()
 
-    ax[1].semilogx(ells_eff, utils.percent_diff(np.diag(cov_sb), np.diag(cov_nmt)), marker='.', label='sb vs nmt')
-    ax[1].semilogx(ells_eff, utils.percent_diff(diag_cov_sims, np.diag(cov_nmt)),
+    ax[1].plot(ells_eff, utils.percent_diff(np.diag(cov_sb), np.diag(cov_nmt)), marker='.', label='sb vs nmt')
+    ax[1].plot(ells_eff, utils.percent_diff(diag_cov_sims, np.diag(cov_nmt)),
                    marker='.', label='sim vs nmt', c='purple')
     ax[1].set_ylabel('% diff cov fsky_mask/part_sky')
     ax[1].set_xlabel(r'$\ell$')
     ax[1].fill_between(ells_eff, -10, 10, color='k', alpha=0.1)
     ax[1].axhline(y=0, color='k', alpha=0.5, ls='--')
+    ax[0].axvline(lmax_healpy_safe, color='k', alpha=0.5, ls='--')
+    ax[1].axvline(lmax_healpy_safe, color='k', alpha=0.5, ls='--', label='1.5 * nside')
     ax[1].legend()
+    ax[0].set_xlim(20, 1600)
+    ax[1].set_xlim(20, 1600)
 
     # ! plot whole covmat, for zi = zj = zk = zl = 0
     corr_nmt = utils.cov2corr(cov_nmt)
@@ -861,8 +909,8 @@ if part_sky:
 
     fig, ax = plt.subplots(3, 2, figsize=(12, 14))
     # covariance
-    cax0 = ax[0, 0].matshow(np.log10(np.abs(cov_sb)))
-    cax2 = ax[1, 0].matshow(np.log10(np.abs(cov_nmt)))
+    cax0 = ax[0, 0].matshow(np.log10(np.fabs(cov_sb)))
+    cax2 = ax[1, 0].matshow(np.log10(np.fabs(cov_nmt)))
     ax[0, 0].set_title(f'log10 abs \nfull_sky/fsky_mask cov')
     ax[1, 0].set_title(f'log10 abs \nNaMaster cov')
     fig.colorbar(cax0, ax=ax[0, 0])
