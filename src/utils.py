@@ -4,14 +4,73 @@ from scipy.interpolate import interp1d
 import itertools
 import os
 import time
-
+import matplotlib.pyplot as plt
+from scipy.interpolate import RectBivariateSpline
+from scipy.integrate import simps
 import pymaster as nmt
 import healpy as hp
 
+DEG2_IN_SPHERE = 4 * np.pi * (180 / np.pi)**2
 
-###############################################################################
 
-deg2_in_sphere = 4 * np.pi * (180 / np.pi)**2
+def bin_2d_matrix(cov, ells_in, ells_out, ells_out_edges):
+
+    assert cov.shape[0] == cov.shape[1] == len(ells_in), "ells_in must be the same length as the covariance matrix"
+    assert len(ells_out) == len(ells_out_edges) - 1, "ells_out must be the same length as the number of edges - 1"
+
+    binned_cov = np.zeros((len(ells_out), len(ells_out)))
+    cov_interp_func = RectBivariateSpline(ells_in, ells_in, cov)
+
+    ells_edges_low = ells_out_edges[:-1]
+    ells_edges_high = ells_out_edges[1:]
+
+    # Loop over the output bins
+    for ell1_idx, _ in enumerate(ells_out):
+        for ell2_idx, _ in enumerate(ells_out):
+
+            # Get ell min/max for the current bins
+            ell1_min = ells_edges_low[ell1_idx]
+            ell1_max = ells_edges_high[ell1_idx]
+            ell2_min = ells_edges_low[ell2_idx]
+            ell2_max = ells_edges_high[ell2_idx]
+
+            # isolate the relevant ranges of ell values from the original ells_in grid
+            ell1_in = ells_in[(ell1_min <= ells_in) & (ells_in < ell1_max)]
+            ell2_in = ells_in[(ell2_min <= ells_in) & (ells_in < ell2_max)]
+
+            # mask the covariance to the relevant block
+            cov_masked = cov[np.ix_(ell1_in, ell2_in)]
+
+            # Calculate the bin widths
+            delta_ell_1 = ell1_max - ell1_min
+            delta_ell_2 = ell2_max - ell2_min
+
+            # Option 1a: use the original grid for integration and the ell values as weights
+            ells1_in_xx, ells2_in_yy = np.meshgrid(ell1_in, ell2_in, indexing='ij')
+            partial_integral = simps(y=cov_masked * ells1_in_xx * ells2_in_yy, x=ell2_in, axis=1)
+            integral = simps(y=partial_integral, x=ell1_in)
+            binned_cov[ell1_idx, ell2_idx] = integral / (np.sum(ell1_in) * np.sum(ell2_in))
+
+            # Option 1b: use the original grid for integration and no weights
+            # partial_integral = simps(y=cov_masked, x=ell2_in, axis=1)
+            # integral = simps(y=partial_integral, x=ell1_in)
+            # binned_cov[ell1_idx, ell2_idx] = integral / (delta_ell_1 * delta_ell_2)
+
+            # # Option 2: create fine grids for integration over the ell ranges (GIVES GOOD RESULTS ONLY FOR nsteps=delta_ell!)
+            # ell_fine_1 = np.linspace(ell1_min, ell1_max, 50)
+            # ell_fine_2 = np.linspace(ell2_min, ell2_max, 50)
+
+            # # Evaluate the spline on the fine grids
+            # ell1_fine_xx, ell2_fine_yy = np.meshgrid(ell_fine_1, ell_fine_2, indexing='ij')
+            # cov_interp_vals = cov_interp_func(ell_fine_1, ell_fine_2)
+
+            # # Perform simps integration over the ell ranges
+            # partial_integral = simps(y=cov_interp_vals * ell1_fine_xx * ell2_fine_yy, x=ell_fine_2, axis=1)
+            # integral = simps(y=partial_integral, x=ell_fine_1)
+            # # Normalize by the bin areas
+            # binned_cov[ell1_idx, ell2_idx] = integral / (np.sum(ell_fine_1) * np.sum(ell_fine_2))
+
+    return binned_cov
 
 
 def percent_diff(array_1, array_2, abs_value=False):
@@ -20,8 +79,8 @@ def percent_diff(array_1, array_2, abs_value=False):
         return np.abs(diff)
     else:
         return diff
-    
-    
+
+
 def matshow(array, title="title", log=True, abs_val=False, threshold=None, only_show_nans=False, matshow_kwargs={}):
     """
     :param array:
@@ -56,6 +115,7 @@ def matshow(array, title="title", log=True, abs_val=False, threshold=None, only_
     plt.title(title)
     plt.show()
 
+
 def deg2_to_fsky(survey_area_deg2):
     # deg2_in_sphere = 41252.96  # deg^2 in a spere
     # return survey_area_deg2 / deg2_in_sphere
@@ -63,9 +123,10 @@ def deg2_to_fsky(survey_area_deg2):
     f_sky = survey_area_deg2 * (np.pi / 180) ** 2 / (4 * np.pi)
     return f_sky
 
+
 def generate_polar_cap(area_deg2, nside):
 
-    if np.isclose(area_deg2, deg2_in_sphere, rtol=1e-5, atol=0):
+    if np.isclose(area_deg2, DEG2_IN_SPHERE, rtol=1e-5, atol=0):
         print('area_deg2 is very close to the full sky, returning a full sky mask')
         mask = np.ones(hp.pixelfunc.nside2npix(nside))
         return mask
@@ -253,6 +314,7 @@ def covariance_einsum(cl_5d, noise_5d, f_sky, ell_values, delta_ell, return_only
 
     return cov_10d
 
+
 def covariance_nmt(cl_5d, noise_5d, workspace_path, mask_path):
     """
     computes the 10-dimensional covariance matrix, of shape
@@ -283,8 +345,8 @@ def covariance_nmt(cl_5d, noise_5d, workspace_path, mask_path):
                                           'is no ell dependence'
 
     # Transform array Cl's and noise to dictionnary to ease the loop over probes
-    cl_dic, keys =  Cl5D_to_ClDic(cl_5d)
-    noise_dic, keys =  Cl5D_to_ClDic(noise_5d)
+    cl_dic, keys = Cl5D_to_ClDic(cl_5d)
+    noise_dic, keys = Cl5D_to_ClDic(noise_5d)
 
     # Get symetric Cls for permutations in the covariance loop
     for key in keys:
@@ -310,7 +372,7 @@ def covariance_nmt(cl_5d, noise_5d, workspace_path, mask_path):
 
     # Initialise the covariance matrix
     ncl = len(keys)
-    covmat = np.zeros((int(ncl*nbl), int(ncl*nbl)))
+    covmat = np.zeros((int(ncl * nbl), int(ncl * nbl)))
 
     # Covariance computation loop
     print('Start loop')
@@ -318,25 +380,26 @@ def covariance_nmt(cl_5d, noise_5d, workspace_path, mask_path):
         probeA, probeB = key1.split('-')
         probeC, probeD = key2.split('-')
 
-        covmat[idx1*nbl:(idx1+1)*nbl, idx2*nbl:(idx2+1)*nbl] =\
-            nmt.gaussian_covariance(cov_workspace, 0, 0, 0, 0, # Spins of the 4 fields
+        covmat[idx1 * nbl:(idx1 + 1) * nbl, idx2 * nbl:(idx2 + 1) * nbl] =\
+            nmt.gaussian_covariance(cov_workspace, 0, 0, 0, 0,  # Spins of the 4 fields
                                     [cl_dic['-'.join([probeA, probeC])] +\
-                                    noise_dic['-'.join([probeA, probeC])]],
+                                     noise_dic['-'.join([probeA, probeC])]],
                                     [cl_dic['-'.join([probeB, probeC])] +\
-                                    noise_dic['-'.join([probeB, probeC])]],
+                                     noise_dic['-'.join([probeB, probeC])]],
                                     [cl_dic['-'.join([probeA, probeD])] +\
-                                    noise_dic['-'.join([probeA, probeD])]],
+                                     noise_dic['-'.join([probeA, probeD])]],
                                     [cl_dic['-'.join([probeB, probeD])] +\
-                                    noise_dic['-'.join([probeB, probeD])]],
+                                     noise_dic['-'.join([probeB, probeD])]],
                                     workspace, wb=workspace)
 
     # Symmetric of the matrix
     covmat = covmat + covmat.T - np.diag(covmat.diagonal())
 
-    #TODO transform 2D matrix to 10D so that it can enter ordering transformation functions.
+    # TODO transform 2D matrix to 10D so that it can enter ordering transformation functions.
     # For now the ordering is probe_zpair_ell
 
     return covmat
+
 
 def Cl5D_to_ClDic(cl_5d):
     """
@@ -379,11 +442,12 @@ def Cl5D_to_ClDic(cl_5d):
             k = '{}{}-{}{}'.format(keymap[probe][0], i, keymap[probe][1], j)
             if probe == 'GGL':
                 dic[k] = cl_5d[keymap_davide[probe][0], keymap_davide[probe][1], :, j, i]
-            else :
+            else:
                 dic[k] = cl_5d[keymap_davide[probe][0], keymap_davide[probe][1], :, i, j]
     keys = list(dic.keys())
 
     return dic, keys
+
 
 def linear_lmin_binning(NSIDE, lmin, bw):
     """
@@ -417,17 +481,18 @@ def linear_lmin_binning(NSIDE, lmin, bw):
     # Generate a linear binning scheme for an NSIDE of 64, starting from l=10, with bin width of 20
     bin_scheme = linear_lmin_binning(NSIDE=64, lmin=10, bw=20)
     """
-    lmax = 2*NSIDE
-    nbl = (lmax-lmin)//bw + 1
+    lmax = 2 * NSIDE
+    nbl = (lmax - lmin) // bw + 1
     elli = np.zeros(nbl, int)
     elle = np.zeros(nbl, int)
 
     for i in range(nbl):
-        elli[i] = lmin + i*bw
-        elle[i] = lmin + (i+1)*bw
+        elli[i] = lmin + i * bw
+        elle[i] = lmin + (i + 1) * bw
 
     b = nmt.NmtBin.from_edges(elli, elle)
     return b
+
 
 def coupling_matrix(bin_scheme, mask, wkspce_name):
     """
@@ -474,17 +539,18 @@ def coupling_matrix(bin_scheme, mask, wkspce_name):
     """
     print('Compute the mixing matrix')
     start = time.time()
-    fmask = nmt.NmtField(mask, [mask]) # nmt field with only the mask
+    fmask = nmt.NmtField(mask, [mask])  # nmt field with only the mask
     w = nmt.NmtWorkspace()
     if os.path.isfile(wkspce_name):
         print('Mixing matrix has already been calculated and is in the workspace file : ', wkspce_name, '. Read it.')
         w.read_from(wkspce_name)
-    else :
+    else:
         print('The file : ', wkspce_name, ' does not exists. Calculating the mixing matrix and writing it.')
         w.compute_coupling_matrix(fmask, fmask, bin_scheme)
         w.write_to(wkspce_name)
-    print('Done computing the mixing matrix. It took ', time.time()-start, 's.')
+    print('Done computing the mixing matrix. It took ', time.time() - start, 's.')
     return w
+
 
 def cov_10D_dict_to_array(cov_10D_dict, nbl, zbins, n_probes=2):
     """ transforms a dictionary of "shape" [(A, B, C, D)][nbl, nbl, zbins, zbins, zbins, zbins] (where A, B, C, D is a
