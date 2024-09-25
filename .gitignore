@@ -154,7 +154,6 @@ cython_debug/
 *.xml
 *.iml
 
-input/*
 src/sigma_cl_comp.png
 src/vmap.fits.gz
 src/heracles_example.ipynb
