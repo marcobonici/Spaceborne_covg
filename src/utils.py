@@ -5,12 +5,77 @@ import itertools
 import os
 import time
 import matplotlib.pyplot as plt
-from scipy.interpolate import RectBivariateSpline
-from scipy.integrate import simps
+from scipy.interpolate import RectBivariateSpline, CubicSpline
+from scipy.integrate import simpson
 import pymaster as nmt
 import healpy as hp
 
 DEG2_IN_SPHERE = 4 * np.pi * (180 / np.pi)**2
+
+from scipy.integrate import simpson
+
+def bin_cells(ells_in, ells_out, ells_out_edges, cls_in, weights=None):
+    """
+    Bin the input power spectrum into the output bins.
+    :param ells_in: array of input ells
+    :param ells_out: array of output ells
+    :param cls_in: array of input power spectrum
+    :param weights: array of weights for the input power spectrum
+    :return: array of binned power spectrum
+    """
+    if weights is None:
+        weights = np.ones_like(ells_in)
+    if len(ells_in) != len(cls_in):
+        raise ValueError('ells_in and cls_in must have the same length')
+    if len(ells_in) != len(weights):
+        raise ValueError('ells_in and weights must have the same length')
+    if np.any(ells_out < ells_in[0]) or np.any(ells_out > ells_in[-1]):
+        raise ValueError('ells_out must be within the range of ells_in')
+    if np.any(ells_out[1:] < ells_out[:-1]):
+        raise ValueError('ells_out must be monotonically increasing')
+
+    assert len(cls_in) == len(ells_in), "ells_in must be the same length as the covariance matrix"
+    assert len(ells_out) == len(ells_out_edges) - 1, "ells_out must be the same length as the number of edges - 1"
+
+    binned_cls = np.zeros(len(ells_out))
+    spline = CubicSpline(ells_in, cls_in)
+
+    ells_edges_low = ells_out_edges[:-1]
+    ells_edges_high = ells_out_edges[1:]
+
+    # Loop over the output bins
+    for ell_idx in range(len(ells_out)):
+
+        # Get ell min/max for the current bins
+        ell_min = ells_edges_low[ell_idx]
+        ell_max = ells_edges_high[ell_idx]
+
+        # isolate the relevant ranges of ell values from the original ells_in grid
+        ells_in_masked = ells_in[(ell_min <= ells_in) & (ells_in < ell_max)]
+        weights_masked = weights[(ell_min <= ells_in) & (ells_in < ell_max)]
+
+        # mask the covariance to the relevant block
+        cls_masked = cls_in[ells_in_masked]
+
+        # Calculate the bin widths
+        if weights is None:
+            delta_ell = ell_max - ell_min
+            assert delta_ell == np.sum(weights_masked), "The weights must sum to the bin width"
+
+
+        # Option 1: use the original grid for integration and no weights
+        integral = simpson(y=cls_masked * weights_masked, x=ells_in_masked)
+        binned_cls[ell_idx] = integral / np.sum(weights_masked)
+
+        # # Option 2: create fine grids for integration over the ell ranges (GIVES GOOD RESULTS ONLY FOR nsteps=delta_ell!)
+        # ell_fine = np.linspace(ell_min, ell_max, 50)
+        # cls_interp = spline(ell_fine)
+
+        # # Perform simpson integration over the ell ranges
+        # integral = simpson(y=cls_interp * ell_fine, x=ell_fine)
+        # binned_cls[ell_idx] = integral / (np.sum(ell_fine))
+
+    return binned_cls
 
 
 def bin_2d_matrix(cov, ells_in, ells_out, ells_out_edges):
@@ -46,15 +111,15 @@ def bin_2d_matrix(cov, ells_in, ells_out, ells_out_edges):
             delta_ell_2 = ell2_max - ell2_min
 
             # Option 1a: use the original grid for integration and the ell values as weights
-            ells1_in_xx, ells2_in_yy = np.meshgrid(ell1_in, ell2_in, indexing='ij')
-            partial_integral = simps(y=cov_masked * ells1_in_xx * ells2_in_yy, x=ell2_in, axis=1)
-            integral = simps(y=partial_integral, x=ell1_in)
-            binned_cov[ell1_idx, ell2_idx] = integral / (np.sum(ell1_in) * np.sum(ell2_in))
+            # ells1_in_xx, ells2_in_yy = np.meshgrid(ell1_in, ell2_in, indexing='ij')
+            # partial_integral = simpson(y=cov_masked * ells1_in_xx * ells2_in_yy, x=ell2_in, axis=1)
+            # integral = simpson(y=partial_integral, x=ell1_in)
+            # binned_cov[ell1_idx, ell2_idx] = integral / (np.sum(ell1_in) * np.sum(ell2_in))
 
             # Option 1b: use the original grid for integration and no weights
-            # partial_integral = simps(y=cov_masked, x=ell2_in, axis=1)
-            # integral = simps(y=partial_integral, x=ell1_in)
-            # binned_cov[ell1_idx, ell2_idx] = integral / (delta_ell_1 * delta_ell_2)
+            partial_integral = simpson(y=cov_masked, x=ell2_in, axis=1)
+            integral = simpson(y=partial_integral, x=ell1_in)
+            binned_cov[ell1_idx, ell2_idx] = integral / (delta_ell_1 * delta_ell_2)
 
             # # Option 2: create fine grids for integration over the ell ranges (GIVES GOOD RESULTS ONLY FOR nsteps=delta_ell!)
             # ell_fine_1 = np.linspace(ell1_min, ell1_max, 50)
@@ -64,9 +129,9 @@ def bin_2d_matrix(cov, ells_in, ells_out, ells_out_edges):
             # ell1_fine_xx, ell2_fine_yy = np.meshgrid(ell_fine_1, ell_fine_2, indexing='ij')
             # cov_interp_vals = cov_interp_func(ell_fine_1, ell_fine_2)
 
-            # # Perform simps integration over the ell ranges
-            # partial_integral = simps(y=cov_interp_vals * ell1_fine_xx * ell2_fine_yy, x=ell_fine_2, axis=1)
-            # integral = simps(y=partial_integral, x=ell_fine_1)
+            # # Perform simpson integration over the ell ranges
+            # partial_integral = simpson(y=cov_interp_vals * ell1_fine_xx * ell2_fine_yy, x=ell_fine_2, axis=1)
+            # integral = simpson(y=partial_integral, x=ell_fine_1)
             # # Normalize by the bin areas
             # binned_cov[ell1_idx, ell2_idx] = integral / (np.sum(ell_fine_1) * np.sum(ell_fine_2))
 
