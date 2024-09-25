@@ -330,7 +330,16 @@ if part_sky:
     # bin_obj = nmt.NmtBin.from_lmax_linear(lmax=lmax, nlb=ells_per_band, is_Dell=False, f_ell=None) # TODO test this
 
     ells_eff = bin_obj.get_effective_ells()  # get effective ells per bandpower
-    ells_eff_int = ells_eff.astype(int)
+
+    # bin the theory
+    cl_LL_3D_bpw = np.zeros((nbl, zbins, zbins))
+    cl_GL_3D_bpw = np.zeros((nbl, zbins, zbins))
+    cl_GG_3D_bpw = np.zeros((nbl, zbins, zbins))
+    for zi in range(zbins):
+        for zj in range(zbins):
+            cl_LL_3D_bpw[:, zi, zj] = bin_obj.bin_cell(cl_LL_3D[:, zi, zj])
+            cl_GL_3D_bpw[:, zi, zj] = bin_obj.bin_cell(cl_GL_3D[:, zi, zj])
+            cl_GG_3D_bpw[:, zi, zj] = bin_obj.bin_cell(cl_GG_3D[:, zi, zj])
 
     # ! create nmt field from the mask (there will be no maps associated to the fields)
     # TODO maks=None (as in the example) or maps=[mask]? I think None
@@ -485,7 +494,7 @@ if part_sky:
         hp_pcl = hp_pcl_GG
         nmt_pcl = nmt_pcl_GG
         master_cl = master_cl_GG
-        cl_theory = cl_GG_3D
+        cl_theory = cl_GG_3D_bpw
         noise_idx = 0
         mm_gg = w00.get_coupling_matrix()
         pseudo_cl_dav = np.einsum('ij,jkl->ikl', mm_gg, cl_GG_3D)
@@ -493,7 +502,7 @@ if part_sky:
         hp_pcl = hp_pcl_LL
         nmt_pcl = nmt_pcl_LL
         master_cl = master_cl_LL
-        cl_theory = cl_LL_3D
+        cl_theory = cl_LL_3D_bpw
         noise_idx = 1
         mm_ll = w22.get_coupling_matrix()
         pseudo_cl_dav = np.einsum('ij,jkl->ikl', mm_ll[:nbl_tot, :nbl_tot], cl_LL_3D)
@@ -502,17 +511,13 @@ if part_sky:
     colors = cm.rainbow(np.linspace(0, 1, zbins))
     for zi in range(1):
 
-        # theory_plus_noise = cl_theory[ells_eff_int, zi, zi] + noise_3x2pt_5D[noise_idx, noise_idx, ells_eff_int, zi, zi]
-        # plt.plot(ells_eff_int, theory_plus_noise, label=f'th minus noise, zi={zi}', color='purple')
-
         plt.plot(hp_pcl, label=f'hp pseudo-c', alpha=.7)
         plt.plot(nmt_pcl[zi, zi, 0, :], label=f'nmt pseudo-c', alpha=.7)
         plt.plot(ells_eff, master_cl[zi, zi, 0, :], label=f'MASTER-c', alpha=.7, marker='.')
         plt.plot(pseudo_cl_dav[:, zi, zi], label=f'dav pseudo-cl', alpha=.7)
 
-        plt.scatter(ells_eff, cl_theory[ells_eff_int, zi, zi], marker='.', label=f'th cls')
-        plt.scatter(ells_eff, cl_theory[ells_eff_int, zi, zi]
-                    * fsky_mask, marker='.', label=f'th cls*fsky')
+        plt.scatter(ells_eff, cl_theory[:, zi, zi], marker='.', label=f'th cls')
+        plt.scatter(ells_eff, cl_theory[:, zi, zi] * fsky_mask, marker='.', label=f'th cls*fsky')
 
     plt.xlabel(r'$\ell$')
     plt.axvline(lmax_healpy_safe, color='k', ls='--', label='1.5 * nside', alpha=.7)
@@ -700,9 +705,9 @@ if part_sky:
 
     # ! test against the full-sky/fsky covariance
     # TODO are the ell and delta_ell values correct??
-    cl_LL_use = cl_LL_3D[ells_eff_int, :, :]  # TODO I'm assuming ell_min=0, so ell_value=ell_idx
-    cl_GL_use = cl_GL_3D[ells_eff_int, :, :]  # TODO I'm assuming ell_min=0, so ell_value=ell_idx
-    cl_GG_use = cl_GG_3D[ells_eff_int, :, :]  # TODO I'm assuming ell_min=0, so ell_value=ell_idx
+    cl_LL_use = cl_LL_3D_bpw  # TODO I'm assuming ell_min=0, so ell_value=ell_idx
+    cl_GL_use = cl_GL_3D_bpw  # TODO I'm assuming ell_min=0, so ell_value=ell_idx
+    cl_GG_use = cl_GG_3D_bpw  # TODO I'm assuming ell_min=0, so ell_value=ell_idx
 
     # other option:
     # print('Computing NAMASTER Cls')
@@ -822,7 +827,7 @@ if part_sky:
                                                nside=nside, nreal=nreal,
                                                mask=mask,
                                                load_maps=False,
-                                               which_pseudo_cls='healpy')
+                                               which_pseudo_cls='namaster')
 
     print('...done in {:.2f}s'.format(time.perf_counter() - start_time))
 
@@ -830,33 +835,32 @@ if part_sky:
 
     if simulated_cls.ndim == 3:
         simulated_cls = simulated_cls[:, 0, :]
-
-    binned_sim_cls = np.zeros((nreal, nbl))
-    for i in range(nreal):
-        binned_sim_cls[i, :] = utils.bin_cells(ells_in=ells_tot, ells_out=ells_eff,
-                                               ells_out_edges=ells_eff_edges,
-                                               cls_in=simulated_cls[i, :], weights=None)
-
     # elif block == 'GLGL':
     # simulated_cls = simulated_cls_dict[sim_cl_dict_key][:, 0, :]
     # elif block == 'LLLL':
     # simulated_cls = simulated_cls_dict[sim_cl_dict_key][:, 0, :]
 
-    # ! take only the desired ell values before computing the covariance
-    # TODO test against binning the full cov, as well as the effect of noise
-    # simulated_cls = simulated_cls[:, ells_eff_int]
+    # ! bin *before* computing the covariance
+    binned_sim_cls = np.zeros((nreal, nbl))
+    for i in range(nreal):
+        # my implementation
+        # binned_sim_cls[i, :] = utils.bin_cells(ells_in=ells_tot, ells_out=ells_eff,
+        #    ells_out_edges=ells_eff_edges,
+        #    cls_in=simulated_cls[i, :], weights=None)
+        # using bin_obj
+        binned_sim_cls[i, :] = bin_obj.bin_cell(simulated_cls[i, :])
 
-    # plot them
     plt.figure()
     for i in range(nreal)[:100:5]:
-        # plt.semilogy(ells_eff_int, simulated_cls[i, ells_eff_int], label=f'simulated (pseudo) cls' if i == 0 else '')
-        plt.semilogy(simulated_cls[i, :], label=f'simulated (pseudo) cls[i]')
-        plt.scatter(ells_eff, binned_sim_cls[i, :], label=f'simulated (pseudo) cls[i]', c='orange')
+        plt.scatter(ells_eff, binned_sim_cls[i, :], label=f'bpw simulated (pseudo) cls', c='orange')
+        plt.semilogy(simulated_cls[i, :], label=f'simulated (pseudo) cls')
     plt.loglog(cl_use * fsky_mask, label='theory cls*fsky_mask', c='k')
     plt.axvline(lmax_healpy_safe, c='k', ls='--', label='1.5 * nside')
     plt.legend()
     plt.xlabel(r'$\ell$')
     plt.ylabel(r'$C_\ell$')
+
+    simulated_cls = binned_sim_cls
 
     # np.save(
     #     f'../output/simulated_cls_dict_nreal{nreal}_nside{nside}_{survey_area_deg2:d}deg2.npy', simulated_cls_dict,
@@ -875,7 +879,7 @@ if part_sky:
 
         # ...bin the simulated covariance to compare it with the other ones
         cov_sims_binned = utils.bin_2d_matrix(cov=cov_sims, ells_in=ells_tot,
-                                              ells_out=ells_eff_int, ells_out_edges=ells_eff_edges)
+                                              ells_out=ells_eff, ells_out_edges=ells_eff_edges)
 
         plt.figure()
         plt.title('Simulated cov, full vs interpolated vs binned')
@@ -883,10 +887,10 @@ if part_sky:
         for k in range(2):
 
             if k >= 1:
-                l_mid_eff = 0.5 * (ells_eff_int[k:] + ells_eff_int[:-k])
+                l_mid_eff = 0.5 * (ells_eff[k:] + ells_eff[:-k])
                 l_mid_tot = 0.5 * (ells_tot[k:] + ells_tot[:-k])
             else:
-                l_mid_eff = ells_eff_int
+                l_mid_eff = ells_eff
                 l_mid_tot = ells_tot
 
             plt.semilogy(l_mid_tot, np.fabs(np.diag(cov_sims, k=k)), c=colors[k], label='diag cov_sim')
