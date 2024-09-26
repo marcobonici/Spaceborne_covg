@@ -888,40 +888,6 @@ if part_sky:
     sims_var = np.var(simulated_cls, axis=0)
     cov_sims = np.cov(simulated_cls, rowvar=False, bias=False)
 
-    # ! BIN THE SAMPLE COVARIANCE - TO BE DELETED
-    # if cov_sims.shape == (nbl_tot, nbl_tot):
-
-    #     # interpolate or...
-    #     spline_cov_sims = RegularGridInterpolator((ells_tot, ells_tot), cov_sims)
-    #     ells_eff_ii, ells_eff_jj = np.meshgrid(ells_eff, ells_eff, indexing='ij')
-    #     cov_sims_interp = spline_cov_sims((ells_eff_ii, ells_eff_jj))
-
-    #     # ...bin the simulated covariance to compare it with the other ones
-    #     cov_sims_binned = utils.bin_2d_matrix(cov=cov_sims, ells_in=ells_tot,
-    #                                           ells_out=ells_eff, ells_out_edges=ells_eff_edges,
-    #                                           weights=weights)
-
-    #     plt.figure()
-    #     plt.title('Simulated cov, full vs interpolated vs binned')
-    #     colors = cm.rainbow(np.linspace(0, 1, 5))
-    #     for k in range(2):
-
-    #         if k >= 1:
-    #             l_mid_eff = 0.5 * (ells_eff[k:] + ells_eff[:-k])
-    #             l_mid_tot = 0.5 * (ells_tot[k:] + ells_tot[:-k])
-    #         else:
-    #             l_mid_eff = ells_eff
-    #             l_mid_tot = ells_tot
-
-    #         plt.semilogy(l_mid_tot, np.fabs(np.diag(cov_sims, k=k)), c=colors[k], label='diag cov_sim')
-    #         plt.semilogy(l_mid_eff, np.fabs(np.diag(cov_sims_binned, k=k)), c='red', marker='.',
-    #                      label='diag cov_sims_binned')
-    #         plt.semilogy(l_mid_eff, np.fabs(np.diag(cov_sims_interp, k=k)), c='green', marker='.',
-    #                      label='diag cov_sims_interp')
-    #     plt.legend()
-
-    #     cov_sims = cov_sims_interp
-
     # ! plot diagonal, for zi = zj = zk = zl = 0
     # no delta_ell if you're using the pseudo-cls in the gaussian_simulations func!!
 
