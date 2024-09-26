@@ -54,6 +54,8 @@ def bin_cells(ells_in, ells_out, ells_out_edges, cls_in, weights=None):
         ells_in_masked = ells_in[(ell_min <= ells_in) & (ells_in < ell_max)]
         weights_masked = weights[(ell_min <= ells_in) & (ells_in < ell_max)]
 
+        ells_in_masked_idxs = np.array([np.where(ells_in == ell)[0][0] for ell in ells_in_masked])
+
         # mask the covariance to the relevant block
         cls_masked = cls_in[ells_in_masked]
 
@@ -89,7 +91,7 @@ def bin_2d_matrix(cov, ells_in, ells_out, ells_out_edges, weights=None):
     assert len(weights) == len(ells_in)
 
     binned_cov = np.zeros((len(ells_out), len(ells_out)))
-    cov_interp_func = RectBivariateSpline(ells_in, ells_in, cov)
+    # cov_interp_func = RectBivariateSpline(ells_in, ells_in, cov)
 
     ells_edges_low = ells_out_edges[:-1]
     ells_edges_high = ells_out_edges[1:]
@@ -108,11 +110,14 @@ def bin_2d_matrix(cov, ells_in, ells_out, ells_out_edges, weights=None):
             ell1_masked = ells_in[(ell1_min <= ells_in) & (ells_in < ell1_max)]
             ell2_masked = ells_in[(ell2_min <= ells_in) & (ells_in < ell2_max)]
             
+            ell1_masked_idxs = np.array([np.where(ells_in == ell)[0][0] for ell in ell1_masked])
+            ell2_masked_idxs = np.array([np.where(ells_in == ell)[0][0] for ell in ell2_masked])
+
             weights1_masked = weights[(ell1_min <= ells_in) & (ells_in < ell1_max)]
             weights2_masked = weights[(ell2_min <= ells_in) & (ells_in < ell2_max)]
 
             # mask the covariance to the relevant block
-            cov_masked = cov[np.ix_(ell1_masked, ell2_masked)]
+            cov_masked = cov[np.ix_(ell1_masked_idxs, ell2_masked_idxs)]
                     # Calculate the bin widths
             if weights is None:
                 delta_ell = ell1_max - ell1_min
