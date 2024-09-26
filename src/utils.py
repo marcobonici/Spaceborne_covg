@@ -78,10 +78,15 @@ def bin_cells(ells_in, ells_out, ells_out_edges, cls_in, weights=None):
     return binned_cls
 
 
-def bin_2d_matrix(cov, ells_in, ells_out, ells_out_edges):
+def bin_2d_matrix(cov, ells_in, ells_out, ells_out_edges, weights=None):
 
     assert cov.shape[0] == cov.shape[1] == len(ells_in), "ells_in must be the same length as the covariance matrix"
     assert len(ells_out) == len(ells_out_edges) - 1, "ells_out must be the same length as the number of edges - 1"
+
+    if weights is None:
+        weights = np.ones_like(ells_in)
+        
+    assert len(weights) == len(ells_in)
 
     binned_cov = np.zeros((len(ells_out), len(ells_out)))
     cov_interp_func = RectBivariateSpline(ells_in, ells_in, cov)
@@ -100,26 +105,27 @@ def bin_2d_matrix(cov, ells_in, ells_out, ells_out_edges):
             ell2_max = ells_edges_high[ell2_idx]
 
             # isolate the relevant ranges of ell values from the original ells_in grid
-            ell1_in = ells_in[(ell1_min <= ells_in) & (ells_in < ell1_max)]
-            ell2_in = ells_in[(ell2_min <= ells_in) & (ells_in < ell2_max)]
+            ell1_masked = ells_in[(ell1_min <= ells_in) & (ells_in < ell1_max)]
+            ell2_masked = ells_in[(ell2_min <= ells_in) & (ells_in < ell2_max)]
+            
+            weights1_masked = weights[(ell1_min <= ells_in) & (ells_in < ell1_max)]
+            weights2_masked = weights[(ell2_min <= ells_in) & (ells_in < ell2_max)]
 
             # mask the covariance to the relevant block
-            cov_masked = cov[np.ix_(ell1_in, ell2_in)]
+            cov_masked = cov[np.ix_(ell1_masked, ell2_masked)]
+                    # Calculate the bin widths
+            if weights is None:
+                delta_ell = ell1_max - ell1_min
+                assert delta_ell == np.sum(weights1_masked), "The weights must sum to the bin width"
 
             # Calculate the bin widths
-            delta_ell_1 = ell1_max - ell1_min
-            delta_ell_2 = ell2_max - ell2_min
+            # delta_ell_1 = ell1_max - ell1_min
+            # delta_ell_2 = ell2_max - ell2_min
 
             # Option 1a: use the original grid for integration and the ell values as weights
-            # ells1_in_xx, ells2_in_yy = np.meshgrid(ell1_in, ell2_in, indexing='ij')
-            # partial_integral = simpson(y=cov_masked * ells1_in_xx * ells2_in_yy, x=ell2_in, axis=1)
-            # integral = simpson(y=partial_integral, x=ell1_in)
-            # binned_cov[ell1_idx, ell2_idx] = integral / (np.sum(ell1_in) * np.sum(ell2_in))
-
-            # Option 1b: use the original grid for integration and no weights
-            partial_integral = simpson(y=cov_masked, x=ell2_in, axis=1)
-            integral = simpson(y=partial_integral, x=ell1_in)
-            binned_cov[ell1_idx, ell2_idx] = integral / (delta_ell_1 * delta_ell_2)
+            partial_integral = simpson(y=cov_masked * weights1_masked[:, None] * weights2_masked[None, :], x=ell2_masked, axis=1)
+            integral = simpson(y=partial_integral, x=ell1_masked)
+            binned_cov[ell1_idx, ell2_idx] = integral / (np.sum(weights1_masked) * np.sum(weights2_masked))
 
             # # Option 2: create fine grids for integration over the ell ranges (GIVES GOOD RESULTS ONLY FOR nsteps=delta_ell!)
             # ell_fine_1 = np.linspace(ell1_min, ell1_max, 50)
@@ -1333,11 +1339,13 @@ def compute_ells(nbl: int, ell_min: int, ell_max: int, recipe, output_ell_bin_ed
         ell bin edges. Returned only if output_ell_bin_edges is True.
     """
     if recipe == 'ISTF':
-        ell_bin_edges = np.logspace(np.log10(ell_min), np.log10(ell_max), nbl + 1)
+        log10_ell_min = np.log10(ell_min) if ell_min != 0 else ell_min
+        ell_bin_edges = np.logspace(log10_ell_min, np.log10(ell_max), nbl + 1)
         ells = (ell_bin_edges[1:] + ell_bin_edges[:-1]) / 2
         deltas = np.diff(ell_bin_edges)
     elif recipe == 'ISTNL':
-        ell_bin_edges = np.linspace(np.log(ell_min), np.log(ell_max), nbl + 1)
+        log_ell_min = np.log(ell_min) if ell_min != 0 else ell_min
+        ell_bin_edges = np.linspace(log_ell_min, np.log(ell_max), nbl + 1)
         ells = (ell_bin_edges[:-1] + ell_bin_edges[1:]) / 2.
         ells = np.exp(ells)
         deltas = np.diff(np.exp(ell_bin_edges))
