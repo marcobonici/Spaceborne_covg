@@ -42,7 +42,7 @@ survey_area_deg2: 41252.96125  # in deg^2
 nside: 512
 apodize_mask: True
 aposize: .1 # apodization scale in deg
-ells_per_band: 1 # number of multipole values per bandpower
+ells_per_band: 50 # number of multipole values per bandpower
 nreal: 2
 coupled: False
 
