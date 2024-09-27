@@ -14,7 +14,8 @@ DEG2_IN_SPHERE = 4 * np.pi * (180 / np.pi)**2
 
 from scipy.integrate import simpson
 
-def bin_cells(ells_in, ells_out, ells_out_edges, cls_in, weights=None):
+
+def bin_cell(ells_in, ells_out, ells_out_edges, cls_in, weights, ells_eff=None):
     """
     Bin the input power spectrum into the output bins.
     :param ells_in: array of input ells
@@ -27,7 +28,7 @@ def bin_cells(ells_in, ells_out, ells_out_edges, cls_in, weights=None):
         weights = np.ones_like(ells_in)
     if len(ells_in) != len(cls_in):
         raise ValueError('ells_in and cls_in must have the same length')
-    if len(ells_in) != len(weights):
+    if len(ells_in) != len(weights[0, :]):
         raise ValueError('ells_in and weights must have the same length')
     if np.any(ells_out < ells_in[0]) or np.any(ells_out > ells_in[-1]):
         raise ValueError('ells_out must be within the range of ells_in')
@@ -50,20 +51,24 @@ def bin_cells(ells_in, ells_out, ells_out_edges, cls_in, weights=None):
         ell_min = ells_edges_low[ell_idx]
         ell_max = ells_edges_high[ell_idx]
 
-        # isolate the relevant ranges of ell values from the original ells_in grid
-        ells_in_masked = ells_in[(ell_min <= ells_in) & (ells_in < ell_max)]
-        weights_masked = weights[(ell_min <= ells_in) & (ells_in < ell_max)]
+        # this mask returns a bool array True at the ells_in indices satisfying the condition
+        ell_bool_mask = (ell_min <= ells_in) & (ells_in < ell_max)
+        ell_masked_idxs = np.nonzero(ell_bool_mask)[0]
 
-        ells_in_masked_idxs = np.array([np.where(ells_in == ell)[0][0] for ell in ells_in_masked])
+        # isolate the relevant ranges of ell values from the original ells_in grid, weights and cov
+        ells_in_masked = ells_in[ell_masked_idxs]
+        cls_masked = cls_in[ell_masked_idxs]
 
-        # mask the covariance to the relevant block
-        cls_masked = cls_in[ells_in_masked]
+        if weights.shape == (len(ells_eff), len(ells_in)):
+            ells_eff_idx = np.argmin(np.abs(ells_eff - ells_out[ell_idx]))
+            weights_masked = weights[ells_eff_idx, ell_masked_idxs]
+        elif weights.shape == (len(ells_in),):
+            weights_masked = weights[ell_masked_idxs]
 
         # Calculate the bin widths
         if weights is None:
             delta_ell = ell_max - ell_min
             assert delta_ell == np.sum(weights_masked), "The weights must sum to the bin width"
-
 
         # Option 1: use the original grid for integration and no weights
         integral = simpson(y=cls_masked * weights_masked, x=ells_in_masked)
@@ -80,14 +85,14 @@ def bin_cells(ells_in, ells_out, ells_out_edges, cls_in, weights=None):
     return binned_cls
 
 
-def bin_2d_matrix(cov, ells_in, ells_out, ells_out_edges, weights=None):
+def bin_2d_matrix(cov, ells_in, ells_out, ells_out_edges, weights, ells_of_weights):
 
     assert cov.shape[0] == cov.shape[1] == len(ells_in), "ells_in must be the same length as the covariance matrix"
     assert len(ells_out) == len(ells_out_edges) - 1, "ells_out must be the same length as the number of edges - 1"
 
     if weights is None:
         weights = np.ones_like(ells_in)
-        
+
     assert len(weights) == len(ells_in)
 
     binned_cov = np.zeros((len(ells_out), len(ells_out)))
@@ -106,29 +111,27 @@ def bin_2d_matrix(cov, ells_in, ells_out, ells_out_edges, weights=None):
             ell2_min = ells_edges_low[ell2_idx]
             ell2_max = ells_edges_high[ell2_idx]
 
-            # isolate the relevant ranges of ell values from the original ells_in grid
-            ell1_masked = ells_in[(ell1_min <= ells_in) & (ells_in < ell1_max)]
-            ell2_masked = ells_in[(ell2_min <= ells_in) & (ells_in < ell2_max)]
-            
-            ell1_masked_idxs = np.array([np.where(ells_in == ell)[0][0] for ell in ell1_masked])
-            ell2_masked_idxs = np.array([np.where(ells_in == ell)[0][0] for ell in ell2_masked])
+            # this mask returns a bool array True at the ells_in indices satisfying the condition
+            ell1_bool_mask = (ell1_min <= ells_in) & (ells_in < ell1_max)
+            ell2_bool_mask = (ell2_min <= ells_in) & (ells_in < ell2_max)
+            ell1_masked_idxs = np.nonzero(ell1_bool_mask)[0]
+            ell2_masked_idxs = np.nonzero(ell2_bool_mask)[0]
 
-            weights1_masked = weights[(ell1_min <= ells_in) & (ells_in < ell1_max)]
-            weights2_masked = weights[(ell2_min <= ells_in) & (ells_in < ell2_max)]
-
-            # mask the covariance to the relevant block
+            # isolate the relevant ranges of ell values from the original ells_in grid, weights and cov
+            ell1_masked = ells_in[ell1_masked_idxs]
+            ell2_masked = ells_in[ell2_masked_idxs]
+            weights1_masked = weights[ell1_masked_idxs]
+            weights2_masked = weights[ell2_masked_idxs]
             cov_masked = cov[np.ix_(ell1_masked_idxs, ell2_masked_idxs)]
-                    # Calculate the bin widths
+
+            # Calculate the bin widths
             if weights is None:
                 delta_ell = ell1_max - ell1_min
                 assert delta_ell == np.sum(weights1_masked), "The weights must sum to the bin width"
 
-            # Calculate the bin widths
-            # delta_ell_1 = ell1_max - ell1_min
-            # delta_ell_2 = ell2_max - ell2_min
-
             # Option 1a: use the original grid for integration and the ell values as weights
-            partial_integral = simpson(y=cov_masked * weights1_masked[:, None] * weights2_masked[None, :], x=ell2_masked, axis=1)
+            partial_integral = simpson(
+                y=cov_masked * weights1_masked[:, None] * weights2_masked[None, :], x=ell2_masked, axis=1)
             integral = simpson(y=partial_integral, x=ell1_masked)
             binned_cov[ell1_idx, ell2_idx] = integral / (np.sum(weights1_masked) * np.sum(weights2_masked))
 
