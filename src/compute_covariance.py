@@ -2,6 +2,7 @@ import gc
 import json
 import sys
 import time
+import warnings
 from matplotlib import cm
 import matplotlib.pyplot as plt
 import numpy as np
@@ -367,7 +368,7 @@ if part_sky:
     # TODO use lmax_mask instead of nside? Decide which binning scheme is the best
     # ell_values, delta_values, ell_bin_edges = utils.compute_ells(nbl, 0, lmax, recipe='ISTF', output_ell_bin_edges=True)
     # bin_obj = nmt.NmtBin.from_edges(ell_bin_edges[:-1].astype(int), ell_bin_edges[1:].astype(int), is_Dell=False, f_ell=None)
-    bin_obj = nmt.NmtBin.from_nside_linear(nside, ells_per_band)
+    bin_obj = nmt.NmtBin.from_nside_linear(nside, ells_per_band, is_Dell=False)
     # bin_obj = nmt.NmtBin.from_lmax_linear(lmax=lmax, nlb=ells_per_band, is_Dell=False, f_ell=None) # TODO test this
 
     ells_eff = bin_obj.get_effective_ells()  # get effective ells per bandpower
@@ -378,6 +379,7 @@ if part_sky:
     ells_eff_edges = np.append(ells_eff_edges, bin_obj.get_ell_list(nbl_eff - 1)[-1] + 1)  # careful f the +1!
     lmin_eff = ells_eff_edges[0]
     lmax_eff = ells_eff_edges[-1]
+    ells_bpw = ells_tot[lmin_eff:lmax_eff]
     delta_ells_bpw = np.diff(np.array([bin_obj.get_ell_list(i)[0] for i in range(nbl_eff)]))
     assert np.all(delta_ells_bpw == ells_per_band), 'delta_ell from bpw does not match ells_per_band'
 
@@ -405,9 +407,17 @@ if part_sky:
     bpw_02 = w02.get_bandpower_windows()
     bpw_22 = w22.get_bandpower_windows()
     
-    ell_weights = np.array([bin_obj.get_weight_list(ell_idx)
-                    for ell_idx in range(nbl_eff)]).flatten()  # get effective ells per bandpower
-    ell_weights = bpw_00[0, :, 0]
+    if cfg['which_ell_weights'] == 'get_weight_list()':
+        ell_weights = np.array([bin_obj.get_weight_list(ell_idx)
+                        for ell_idx in range(nbl_eff)]).flatten()  # get effective ells per bandpower
+    elif cfg['which_ell_weights'] == 'get_bandpower_windows()':
+        warnings.warn('Using bpw_00 as ell_weights')
+        _ell_weights = bpw_00[0, :, 0]
+        ell_weights = np.zeros((nbl_eff, len(ells_bpw)))
+        for ell_idx in range(nbl_eff):
+            ell_weights[ell_idx, :] = np.interp(ells_bpw, ells_tot, _ell_weights[ell_idx, :])
+    else:
+        raise ValueError(f"Invalid value for 'which_ell_weights': {cfg['which_ell_weights']}")
     
     assert bpw_00.shape[1] == bpw_02.shape[1] == bpw_22.shape[1], \
         "The number of bandpower windows must be the same for all fields"
@@ -452,11 +462,17 @@ if part_sky:
     cl_GG_bpw = np.zeros((nbl_eff, zbins_use, zbins_use))
     cl_GL_bpw = np.zeros((nbl_eff, zbins_use, zbins_use))
     cl_LL_bpw = np.zeros((nbl_eff, zbins_use, zbins_use))
+    cl_GG_bpw_dav = np.zeros((nbl_eff, zbins_use, zbins_use))
+    cl_GL_bpw_dav = np.zeros((nbl_eff, zbins_use, zbins_use))
+    cl_LL_bpw_dav = np.zeros((nbl_eff, zbins_use, zbins_use))
     for zi in range(zbins_use):
         for zj in range(zbins_use):
             cl_GG_bpw[:, zi, zj] = bin_obj.bin_cell(cl_GG_unbinned[:, zi, zj])
             cl_GL_bpw[:, zi, zj] = bin_obj.bin_cell(cl_GL_unbinned[:, zi, zj])
             cl_LL_bpw[:, zi, zj] = bin_obj.bin_cell(cl_LL_unbinned[:, zi, zj])
+            cl_GG_bpw_dav[:, zi, zj] = utils.bin_cell(ells_in=ells_bpw, ells_out=ells_eff, ells_out_edges=ells_eff_edges, cls_in=cl_GG_unbinned[ells_bpw, zi, zj], weights=ell_weights, ells_eff=ells_eff)
+            cl_GL_bpw_dav[:, zi, zj] = utils.bin_cell(ells_in=ells_bpw, ells_out=ells_eff, ells_out_edges=ells_eff_edges, cls_in=cl_GL_unbinned[ells_bpw, zi, zj], weights=ell_weights, ells_eff=ells_eff)
+            cl_LL_bpw_dav[:, zi, zj] = utils.bin_cell(ells_in=ells_bpw, ells_out=ells_eff, ells_out_edges=ells_eff_edges, cls_in=cl_LL_unbinned[ells_bpw, zi, zj], weights=ell_weights, ells_eff=ells_eff)
 
     # generate sample fields
     # TODO how about the cross-redshifts?
@@ -527,6 +543,7 @@ if part_sky:
             bpw_pcl_GL_nmt[:, zi, zj] = bin_obj.bin_cell(pcl_GL_nmt[:, zi, zj])
             bpw_pcl_LL_nmt[:, zi, zj] = bin_obj.bin_cell(pcl_LL_nmt[:, zi, zj])
             
+            
     # TODO better understand third dimension
     # pseudo_cl_GL[zi, zi, 0, :] matches cl_LL_3D[zi, zi, :]
     # pseudo_cl_LL[zi, zi, 1&2, :] are very close to 0 (BE, EB?)
@@ -552,7 +569,7 @@ if part_sky:
     hp_pcl_GL = hp_pcl_tot[3, :]
 
     # ! compare results
-    block = 'LLLL'
+    block = 'GGGG'
 
     if block == 'GGGG':
         hp_pcl = hp_pcl_GG
@@ -560,6 +577,7 @@ if part_sky:
         master_cl = cl_GG_master
         cl_th_bpw = cl_GG_bpw
         cl_th_unbinned = cl_GG_unbinned
+        cl_th_bpw_dav = cl_GG_bpw_dav
         noise_idx = 0
         mm_gg = w00.get_coupling_matrix()
         pseudo_cl_dav = np.einsum('ij,jkl->ikl', mm_gg, cl_GG_unbinned)
@@ -568,6 +586,7 @@ if part_sky:
         nmt_pcl = pcl_LL_nmt
         master_cl = cl_LL_master
         cl_th_bpw = cl_LL_bpw
+        cl_th_bpw_dav = cl_LL_bpw_dav
         cl_th_unbinned = cl_LL_unbinned
         noise_idx = 1
         mm_ll = w22.get_coupling_matrix()
@@ -577,15 +596,16 @@ if part_sky:
     colors = cm.rainbow(np.linspace(0, 1, zbins_use))
     for zi in range(1):
 
-        plt.plot(ells_tot, hp_pcl, label=f'hp pseudo-cl', alpha=.7)
-        plt.plot(ells_tot, nmt_pcl[:, zi, zi], label=f'nmt pseudo-cl', alpha=.7)
-        plt.plot(ells_eff, master_cl[:, zi, zi], label=f'MASTER-cl', alpha=.7, marker='.')
-        plt.plot(ells_tot, pseudo_cl_dav[:, zi, zi], label=f'dav pseudo-cl', alpha=.7)
+        # plt.plot(ells_tot, hp_pcl, label=f'hp pseudo-cl', alpha=.7)
+        # plt.plot(ells_tot, nmt_pcl[:, zi, zi], label=f'nmt pseudo-cl', alpha=.7)
+        # plt.plot(ells_eff, master_cl[:, zi, zi], label=f'MASTER-cl', alpha=.7, marker='.')
+        # plt.plot(ells_tot, pseudo_cl_dav[:, zi, zi], label=f'dav pseudo-cl', alpha=.7)
 
-        plt.scatter(ells_eff, cl_th_bpw[:, zi, zi], marker='.', label=f'bpw th cls')
-        plt.scatter(ells_eff, cl_th_bpw[:, zi, zi] * fsky_mask, marker='.', label=f'bpw th cls*fsky')
-        plt.plot(ells_tot, cl_th_unbinned[:, zi, zi], label=f'unbinned th cls')
-        plt.plot(ells_tot, cl_th_unbinned[:, zi, zi] * fsky_mask, label=f'unbinned th cls*fsky')
+        plt.scatter(ells_eff, cl_th_bpw[:, zi, zi]/cl_th_bpw_dav[:, zi, zi], marker='.', label=f'bpw th cls')
+        # plt.scatter(ells_eff, cl_th_bpw_dav[:, zi, zi], marker='.', label=f'cl_th_bpw_dav')
+        # plt.scatter(ells_eff, cl_th_bpw[:, zi, zi] * fsky_mask, marker='.', label=f'bpw th cls*fsky')
+        # plt.plot(ells_tot, cl_th_unbinned[:, zi, zi], label=f'unbinned th cls')
+        # plt.plot(ells_tot, cl_th_unbinned[:, zi, zi] * fsky_mask, label=f'unbinned th cls*fsky')
 
     plt.xlabel(r'$\ell$')
     plt.axvline(lmax_healpy_safe, color='k', ls='--', label='1.5 * nside', alpha=.7)
@@ -594,6 +614,8 @@ if part_sky:
     plt.ylabel(r'$C_\ell$')
     plt.title(f'{block}, nside={nside}, fsky={fsky_mask:.2f}, zi={zi}')
     plt.xscale('log')
+    
+    assert False, 'stop here to check my cls'
 
     # ! Let's now compute the Gaussian estimate of the covariance!
     start_time = time.perf_counter()
@@ -652,7 +674,7 @@ if part_sky:
         cl_GG_4covsb = cl_GG_unbinned[lmin_eff:lmax_eff, :zbins_use, :zbins_use]
         cl_GL_4covsb = cl_GL_unbinned[lmin_eff:lmax_eff, :zbins_use, :zbins_use]
         cl_LL_4covsb = cl_LL_unbinned[lmin_eff:lmax_eff, :zbins_use, :zbins_use]
-        ells_4covsb = ells_tot[lmin_eff:lmax_eff]
+        ells_4covsb = ells_bpw
         nbl_4covsb = len(ells_4covsb)
         delta_ells_4covsb = np.ones(nbl_4covsb)  # since it's unbinned
 
