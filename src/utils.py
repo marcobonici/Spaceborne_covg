@@ -9,13 +9,14 @@ from scipy.interpolate import RectBivariateSpline, CubicSpline
 from scipy.integrate import simpson
 import pymaster as nmt
 import healpy as hp
+from tqdm import tqdm
 
 DEG2_IN_SPHERE = 4 * np.pi * (180 / np.pi)**2
 
 from scipy.integrate import simpson
 
 
-def bin_cell(ells_in, ells_out, ells_out_edges, cls_in, weights, ells_eff=None):
+def bin_cell(ells_in, ells_out, ells_out_edges, cls_in, weights, which_binning, ells_eff=None):
     """
     Bin the input power spectrum into the output bins.
     :param ells_in: array of input ells
@@ -70,9 +71,17 @@ def bin_cell(ells_in, ells_out, ells_out_edges, cls_in, weights, ells_eff=None):
             delta_ell = ell_max - ell_min
             assert delta_ell == np.sum(weights_masked), "The weights must sum to the bin width"
 
+
         # Option 1: use the original grid for integration and no weights
-        integral = simpson(y=cls_masked * weights_masked, x=ells_in_masked)
-        binned_cls[ell_idx] = integral / np.sum(weights_masked)
+        if which_binning == 'integral':
+            integral = simpson(y=cls_masked * weights_masked, x=ells_in_masked)
+            binned_cls[ell_idx] = integral / np.sum(weights_masked)
+        
+        elif which_binning == 'mean':
+            binned_cls[ell_idx] = np.mean(cls_masked) / np.sum(weights_masked)
+
+        else:
+            raise ValueError('which_binning should be "mean" or "integral"')
 
         # # Option 2: create fine grids for integration over the ell ranges (GIVES GOOD RESULTS ONLY FOR nsteps=delta_ell!)
         # ell_fine = np.linspace(ell_min, ell_max, 50)
@@ -85,7 +94,7 @@ def bin_cell(ells_in, ells_out, ells_out_edges, cls_in, weights, ells_eff=None):
     return binned_cls
 
 
-def bin_2d_matrix(cov, ells_in, ells_out, ells_out_edges, weights, ells_of_weights):
+def bin_2d_matrix(cov, ells_in, ells_out, ells_out_edges, which_binning, weights, ells_of_weights):
 
     assert cov.shape[0] == cov.shape[1] == len(ells_in), "ells_in must be the same length as the covariance matrix"
     assert len(ells_out) == len(ells_out_edges) - 1, "ells_out must be the same length as the number of edges - 1"
@@ -102,7 +111,7 @@ def bin_2d_matrix(cov, ells_in, ells_out, ells_out_edges, weights, ells_of_weigh
     ells_edges_high = ells_out_edges[1:]
 
     # Loop over the output bins
-    for ell1_idx, _ in enumerate(ells_out):
+    for ell1_idx, _ in tqdm(enumerate(ells_out)):
         for ell2_idx, _ in enumerate(ells_out):
 
             # Get ell min/max for the current bins
@@ -122,18 +131,29 @@ def bin_2d_matrix(cov, ells_in, ells_out, ells_out_edges, weights, ells_of_weigh
             ell2_masked = ells_in[ell2_masked_idxs]
             weights1_masked = weights[ell1_masked_idxs]
             weights2_masked = weights[ell2_masked_idxs]
-            cov_masked = cov[np.ix_(ell1_masked_idxs, ell2_masked_idxs)]
+            cov_masked = cov[np.ix_(ell1_masked_idxs, ell2_masked_idxs)]            
 
             # Calculate the bin widths
             if weights is None:
                 delta_ell = ell1_max - ell1_min
                 assert delta_ell == np.sum(weights1_masked), "The weights must sum to the bin width"
 
-            # Option 1a: use the original grid for integration and the ell values as weights
-            partial_integral = simpson(
-                y=cov_masked * weights1_masked[:, None] * weights2_masked[None, :], x=ell2_masked, axis=1)
-            integral = simpson(y=partial_integral, x=ell1_masked)
-            binned_cov[ell1_idx, ell2_idx] = integral / (np.sum(weights1_masked) * np.sum(weights2_masked))
+
+            if which_binning == 'integral':
+                # Option 1a: use the original grid for integration and the ell values as weights
+                partial_integral = simpson(
+                    y=cov_masked * weights1_masked[:, None] * weights2_masked[None, :], x=ell2_masked, axis=1)
+                integral = simpson(y=partial_integral, x=ell1_masked)
+                binned_cov[ell1_idx, ell2_idx] = integral / (np.sum(weights1_masked) * np.sum(weights2_masked))
+
+            elif which_binning == 'mean':
+                # ! important note: taking the mean in 2D is equivalent to taking the mean and dividing by delta_ell in 1D
+                # binned_cov[ell1_idx, ell2_idx] = np.mean(np.diag(cov_masked)) / delta_ell
+                binned_cov[ell1_idx, ell2_idx] = np.mean(cov_masked) 
+
+            else:
+                raise ValueError('which_binning should be "mean" or "integral"')
+            
 
             # # Option 2: create fine grids for integration over the ell ranges (GIVES GOOD RESULTS ONLY FOR nsteps=delta_ell!)
             # ell_fine_1 = np.linspace(ell1_min, ell1_max, 50)
