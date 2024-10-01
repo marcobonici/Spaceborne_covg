@@ -14,10 +14,10 @@ cfg = yaml.load(sys.stdin, Loader=yaml.FullLoader)
 
 # if you want to execute without passing the path
 # with open('../config/example_config.yaml', 'r') as file:
-#     cfg = yaml.safe_load(file)
+    # cfg = yaml.safe_load(file)
 
 survey_area = cfg['survey_area']  # deg^2
-deg2_in_sphere = 41252.96125
+deg2_in_sphere = utils.DEG2_IN_SPHERE
 fsky = survey_area / deg2_in_sphere
 
 zbins = cfg['zbins']
@@ -113,7 +113,8 @@ cl_3x2pt_5D[0, 1, :, :, :] = np.transpose(cl_GL_3D, (0, 2, 1))
 noise_3x2pt_4D = utils.build_noise(zbins, n_probes, sigma_eps2=sigma_eps2,
                                    ng_shear=n_gal_shear, 
                                    ng_clust=n_gal_clustering,
-                                   EP_or_ED=EP_or_ED)
+                                   EP_or_ED=EP_or_ED,
+                                   which_shape_noise=cfg['which_shape_noise'])
 noise_3x2pt_5D = np.zeros((n_probes, n_probes, nbl, zbins, zbins))
 for probe_A in (0, 1):
     for probe_B in (0, 1):
@@ -184,4 +185,3 @@ with open(f'{output_folder}/other_specs.txt', 'w') as file:
 print(f'Done')
 print(f'Covariance files saved in {output_folder}')
 
-# ! Plot covariance
