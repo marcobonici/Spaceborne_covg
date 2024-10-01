@@ -1,16 +1,9 @@
-import bz2
-import sys
 import warnings
-from pathlib import Path
-import matplotlib.pyplot as plt
 import numpy as np
 from scipy.interpolate import interp1d
-import pickle
-import itertools
-import os
 
+DEG2_IN_SPHERE = 4 * np.pi * (180 / np.pi)**2
 
-###############################################################################
 
 def generate_ind(triu_tril_square, row_col_major, size):
     """
@@ -833,8 +826,8 @@ def build_noise(zbins, n_probes, sigma_eps2, ng_shear, ng_clust, EP_or_ED, which
     which_shape_noise : str
         Which shape noise to use. 
         'ISTF' for the "incorrect" shape noise (used in ISTF paper), for backwars-compatibility.
-        'correct' for the correct shape noise, taking into account EE-only noise.
-    
+        'per_component' for the per component shape noise, taking into account EE-only noise.
+
     Returns
     -------
     noise_4d : ndarray, shape (n_probes, n_probes, zbins, zbins)
@@ -883,14 +876,14 @@ def build_noise(zbins, n_probes, sigma_eps2, ng_shear, ng_clust, EP_or_ED, which
 
     # create and fill N
     noise_4d = np.zeros((n_probes, n_probes, zbins, zbins))
-    
+
     if which_shape_noise == 'ISTF':
-        np.fill_diagonal(noise_4d[0, 0, :, :], sigma_eps2 / n_bar_shear)  # ! old, INcorrect
-    elif which_shape_noise == 'correct':
-        np.fill_diagonal(noise_4d[0, 0, :, :], sigma_eps2 / (2 * n_bar_shear))  # ! correct
+        np.fill_diagonal(noise_4d[0, 0, :, :], sigma_eps2 / n_bar_shear)
+    elif which_shape_noise == 'per_component':
+        np.fill_diagonal(noise_4d[0, 0, :, :], sigma_eps2 / (2 * n_bar_shear))
     else:
-        raise ValueError('which_shape_noise must be ISTF or correct')
-    
+        raise ValueError('which_shape_noise must be "ISTF" or "per_component"')
+
     np.fill_diagonal(noise_4d[1, 1, :, :], 1 / n_bar_clust)
     noise_4d[0, 1, :, :] = 0
     noise_4d[1, 0, :, :] = 0
