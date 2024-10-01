@@ -45,7 +45,7 @@ aposize: .1 # apodization scale in deg
 ells_per_band: 50 # number of multipole values per bandpower
 nreal: 2
 coupled: False
-which_ell_weights: get_bandpower_windows()  # get_weight_list() or get_bandpower_windows()
+which_ell_weights: get_weight_list()  # get_weight_list() or get_bandpower_windows()
 
 # datavector and covariance ordering options
 triu_tril: "triu" # or 'tril'. Which elements of the (symmetric) auto-spectra are kept

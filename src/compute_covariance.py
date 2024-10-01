@@ -412,10 +412,12 @@ if part_sky:
                         for ell_idx in range(nbl_eff)]).flatten()  # get effective ells per bandpower
     elif cfg['which_ell_weights'] == 'get_bandpower_windows()':
         warnings.warn('Using bpw_00 as ell_weights')
-        _ell_weights = bpw_00[0, :, 0]
-        ell_weights = np.zeros((nbl_eff, len(ells_bpw)))
-        for ell_idx in range(nbl_eff):
-            ell_weights[ell_idx, :] = np.interp(ells_bpw, ells_tot, _ell_weights[ell_idx, :])
+        ell_weights = bpw_00[0, :, 0]
+        
+        # interpolate on ells_bpw
+        # ell_weights = np.zeros((nbl_eff, len(ells_bpw)))
+        # for ell_idx in range(nbl_eff):
+            # ell_weights[ell_idx, :] = np.interp(ells_bpw, ells_tot, _ell_weights[ell_idx, :])
     else:
         raise ValueError(f"Invalid value for 'which_ell_weights': {cfg['which_ell_weights']}")
     

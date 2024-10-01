@@ -28,7 +28,7 @@ def bin_cell(ells_in, ells_out, ells_out_edges, cls_in, weights, ells_eff=None):
         weights = np.ones_like(ells_in)
     if len(ells_in) != len(cls_in):
         raise ValueError('ells_in and cls_in must have the same length')
-    if len(ells_in) != len(weights[0, :]):
+    if len(ells_in) != len(weights):
         raise ValueError('ells_in and weights must have the same length')
     if np.any(ells_out < ells_in[0]) or np.any(ells_out > ells_in[-1]):
         raise ValueError('ells_out must be within the range of ells_in')
