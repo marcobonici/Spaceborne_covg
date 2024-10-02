@@ -161,3 +161,4 @@ src/heracles_example_run.ipynb
 src/helpers.py
 src/catalog.fits
 src/nz.npz
+.aider*

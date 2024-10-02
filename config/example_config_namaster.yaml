@@ -42,10 +42,12 @@ survey_area_deg2: 41252.96125  # in deg^2
 nside: 512
 apodize_mask: True
 aposize: .1 # apodization scale in deg
-ells_per_band: 10 # number of multipole values per bandpower
-nreal: 2
-coupled: False
+ells_per_band: 50 # number of multipole values per bandpower
+nreal: 20
+coupled: False  # compute the covariance of the coupled or uncoupled cls
 which_ell_weights: get_weight_list()  # get_weight_list() or get_bandpower_windows()
+which_cls: namaster  # namaster or healpy
+compute_namaster_sims: False
 
 # datavector and covariance ordering options
 triu_tril: "triu" # or 'tril'. Which elements of the (symmetric) auto-spectra are kept
@@ -71,7 +73,7 @@ part_sky: True
 workspace_path: "{ROOT:s}/Spaceborne_covg/input/fullsky_NmtWorkspace_NS32_LMIN10_BW5.fits"
 
 # path to mask
-read_mask: False  # True or False. if False, generates polar cap with desired sky area and nside on-the-fly
+read_mask: True  # True or False. if False, generates polar cap with desired sky area and nside on-the-fly
 # DR3-like
 # mask_path: /home/davide/Documenti/Lavoro/Programmi/CSSTforecasts/mask_nside4096/map_area_only.npy
 # DR1-like (actual Euclid mask)

@@ -78,7 +78,7 @@ def bin_cell(ells_in, ells_out, ells_out_edges, cls_in, weights, which_binning, 
             binned_cls[ell_idx] = integral / np.sum(weights_masked)
         
         elif which_binning == 'mean':
-            binned_cls[ell_idx] = np.mean(cls_masked) / np.sum(weights_masked)
+            binned_cls[ell_idx] = np.mean(cls_masked)
 
         else:
             raise ValueError('which_binning should be "mean" or "integral"')
@@ -94,7 +94,7 @@ def bin_cell(ells_in, ells_out, ells_out_edges, cls_in, weights, which_binning, 
     return binned_cls
 
 
-def bin_2d_matrix(cov, ells_in, ells_out, ells_out_edges, which_binning, weights, ells_of_weights):
+def bin_2d_matrix(cov, ells_in, ells_out, ells_out_edges, which_binning, weights):
 
     assert cov.shape[0] == cov.shape[1] == len(ells_in), "ells_in must be the same length as the covariance matrix"
     assert len(ells_out) == len(ells_out_edges) - 1, "ells_out must be the same length as the number of edges - 1"
