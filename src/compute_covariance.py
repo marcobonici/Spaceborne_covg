@@ -310,6 +310,7 @@ for probe_A in (0, 1):
 start = time.perf_counter()
 if part_sky:
     print('Computing the partial-sky covariance with NaMaster')
+    
 
     # ! =============================================== IMPLEMENTATION BY DAVIDE =======================================
     # TODO check implementation by R. Upham: https://github.com/robinupham/shear_pcl_cov/blob/main/shear_pcl_cov/gaussian_cov.py
@@ -473,14 +474,14 @@ if part_sky:
             cl_GL_bpw[:, zi, zj] = bin_obj.bin_cell(cl_GL_unbinned[:, zi, zj])
             cl_LL_bpw[:, zi, zj] = bin_obj.bin_cell(cl_LL_unbinned[:, zi, zj])
             cl_GG_bpw_dav[:, zi, zj] = utils.bin_cell(ells_in=ells_bpw, ells_out=ells_eff, ells_out_edges=ells_eff_edges,
-                                                      cls_in=cl_GG_unbinned[ells_bpw, zi, zj], weights=ell_weights, 
-                                                      ells_eff=ells_eff, which_binning='mean')
+                                                    cls_in=cl_GG_unbinned[ells_bpw, zi, zj], weights=ell_weights, 
+                                                    ells_eff=ells_eff, which_binning='mean')
             cl_GL_bpw_dav[:, zi, zj] = utils.bin_cell(ells_in=ells_bpw, ells_out=ells_eff, ells_out_edges=ells_eff_edges,
-                                                      cls_in=cl_GL_unbinned[ells_bpw, zi, zj], weights=ell_weights, 
-                                                      ells_eff=ells_eff, which_binning='mean')
+                                                    cls_in=cl_GL_unbinned[ells_bpw, zi, zj], weights=ell_weights, 
+                                                    ells_eff=ells_eff, which_binning='mean')
             cl_LL_bpw_dav[:, zi, zj] = utils.bin_cell(ells_in=ells_bpw, ells_out=ells_eff, ells_out_edges=ells_eff_edges,
-                                                      cls_in=cl_LL_unbinned[ells_bpw, zi, zj], weights=ell_weights, 
-                                                      ells_eff=ells_eff, which_binning='mean')
+                                                    cls_in=cl_LL_unbinned[ells_bpw, zi, zj], weights=ell_weights, 
+                                                    ells_eff=ells_eff, which_binning='mean')
 
     # generate sample fields
     # TODO how about the cross-redshifts?
@@ -489,15 +490,15 @@ if part_sky:
     for zi in range(zbins_use):
         # Prepare the power spectra for EE, BB, and EB
         f0[zi], f2[zi] = get_sample_field(cl_TT=cl_GG_unbinned[:, zi, zi],
-                                          cl_EE=cl_LL_unbinned[:, zi, zi],
-                                          cl_BB=cl_BB_unbinned[:, zi, zi],
-                                          cl_TE=cl_GL_unbinned[:, zi, zi],
-                                          nside=nside)
+                                        cl_EE=cl_LL_unbinned[:, zi, zi],
+                                        cl_BB=cl_BB_unbinned[:, zi, zi],
+                                        cl_TE=cl_GL_unbinned[:, zi, zi],
+                                        nside=nside)
 
     # Create a map(s) from cl(s) to visualize the simulated - masked - maps, just for fun
     zi = 0
     map_t, map_q, map_u = hp.synfast([cl_GG_unbinned[:, zi, zi], cl_LL_unbinned[:, zi, zi],
-                                     cl_BB_unbinned[:, zi, zi], cl_GL_unbinned[:, zi, zi]], nside)
+                                    cl_BB_unbinned[:, zi, zi], cl_GL_unbinned[:, zi, zi]], nside)
     hp.mollview(map_t * mask, title=f'masked map T, zi={zi}', cmap='inferno_r')
     hp.mollview(map_q * mask, title=f'masked map Q, zi={zi}', cmap='inferno_r')
     hp.mollview(map_u * mask, title=f'masked map U, zi={zi}', cmap='inferno_r')
@@ -700,70 +701,70 @@ if part_sky:
     # The next few lines show how to extract the covariance matrices
     # for different spin combinations.
     covar_00_00 = nmt.gaussian_covariance(cw,
-                                          0, 0, 0, 0,  # Spins of the 4 fields
-                                          [cl_tt],  # TT
-                                          [cl_tt],  # TT
-                                          [cl_tt],  # TT
-                                          [cl_tt],  # TT
-                                          coupled=coupled,
-                                          wa=w00, wb=w00).reshape([nbl_4covnmt, 1,
-                                                                   nbl_4covnmt, 1])
+                                        0, 0, 0, 0,  # Spins of the 4 fields
+                                        [cl_tt],  # TT
+                                        [cl_tt],  # TT
+                                        [cl_tt],  # TT
+                                        [cl_tt],  # TT
+                                        coupled=coupled,
+                                        wa=w00, wb=w00).reshape([nbl_4covnmt, 1,
+                                                                nbl_4covnmt, 1])
     covar_TT_TT = covar_00_00[:, 0, :, 0]
 
     # TODO start - check this better - still new
     covar_00_02 = nmt.gaussian_covariance(cw,
-                                          0, 0, 0, 2,  # Spins of the 4 fields
-                                          [cl_tt],  # TT
-                                          [cl_te, cl_tb],  # TE, TB
-                                          [cl_tt],  # TT
-                                          [cl_te, cl_tb],  # TE, TB
-                                          coupled=coupled,
-                                          wa=w00, wb=w02).reshape([nbl_4covnmt, 1,
-                                                                   nbl_4covnmt, 2])
+                                        0, 0, 0, 2,  # Spins of the 4 fields
+                                        [cl_tt],  # TT
+                                        [cl_te, cl_tb],  # TE, TB
+                                        [cl_tt],  # TT
+                                        [cl_te, cl_tb],  # TE, TB
+                                        coupled=coupled,
+                                        wa=w00, wb=w02).reshape([nbl_4covnmt, 1,
+                                                                nbl_4covnmt, 2])
     covar_TT_TE = covar_00_02[:, 0, :, 0]
     covar_TT_TB = covar_00_02[:, 0, :, 1]
     # TODO end - check this better - still new
 
     covar_02_02 = nmt.gaussian_covariance(cw,
-                                          0, 2, 0, 2,  # Spins of the 4 fields
-                                          [cl_tt],  # TT
-                                          [cl_te, cl_tb],  # TE, TB
-                                          [cl_te, cl_tb],  # ET, BT
-                                          [cl_ee, cl_eb,
-                                           cl_eb, cl_bb],  # EE, EB, BE, BB
-                                          coupled=coupled,
-                                          wa=w02, wb=w02).reshape([nbl_4covnmt, 2,
-                                                                   nbl_4covnmt, 2])
+                                        0, 2, 0, 2,  # Spins of the 4 fields
+                                        [cl_tt],  # TT
+                                        [cl_te, cl_tb],  # TE, TB
+                                        [cl_te, cl_tb],  # ET, BT
+                                        [cl_ee, cl_eb,
+                                        cl_eb, cl_bb],  # EE, EB, BE, BB
+                                        coupled=coupled,
+                                        wa=w02, wb=w02).reshape([nbl_4covnmt, 2,
+                                                                nbl_4covnmt, 2])
     covar_TE_TE = covar_02_02[:, 0, :, 0]
     covar_TE_TB = covar_02_02[:, 0, :, 1]
     covar_TB_TE = covar_02_02[:, 1, :, 0]
     covar_TB_TB = covar_02_02[:, 1, :, 1]
 
     covar_00_22 = nmt.gaussian_covariance(cw,
-                                          0, 0, 2, 2,  # Spins of the 4 fields
-                                          [cl_te, cl_tb],  # TE, TB
-                                          [cl_te, cl_tb],  # TE, TB
-                                          [cl_te, cl_tb],  # TE, TB
-                                          [cl_te, cl_tb],  # TE, TB
-                                          coupled=coupled,
-                                          wa=w00, wb=w22).reshape([nbl_4covnmt, 1,
-                                                                   nbl_4covnmt, 4])
+                                        0, 0, 2, 2,  # Spins of the 4 fields
+                                        [cl_te, cl_tb],  # TE, TB
+                                        [cl_te, cl_tb],  # TE, TB
+                                        [cl_te, cl_tb],  # TE, TB
+                                        [cl_te, cl_tb],  # TE, TB
+                                        coupled=coupled,
+                                        wa=w00, wb=w22).reshape([nbl_4covnmt, 1,
+                                                                nbl_4covnmt, 4])
     covar_TT_EE = covar_00_22[:, 0, :, 0]
     covar_TT_EB = covar_00_22[:, 0, :, 1]
     covar_TT_BE = covar_00_22[:, 0, :, 2]
     covar_TT_BB = covar_00_22[:, 0, :, 3]
 
     covar_02_22 = nmt.gaussian_covariance(cw,
-                                          0, 2, 2, 2,  # Spins of the 4 fields
-                                          [cl_te, cl_tb],  # TE, TB
-                                          [cl_te, cl_tb],  # TE, TB
-                                          [cl_ee, cl_eb,
-                                           cl_eb, cl_bb],  # EE, EB, BE, BB
-                                          [cl_ee, cl_eb,
-                                           cl_eb, cl_bb],  # EE, EB, BE, BB
-                                          coupled=coupled,
-                                          wa=w02, wb=w22).reshape([nbl_4covnmt, 2,
-                                                                   nbl_4covnmt, 4])
+                                        0, 2, 2, 2,  # Spins of the 4 fields
+                                        [cl_te, cl_tb],  # TE, TB
+                                        [cl_te, cl_tb],  # TE, TB
+                                        [cl_ee, cl_eb,
+                                        cl_eb, cl_bb],  # EE, EB, BE, BB
+                                        [cl_ee, cl_eb,
+                                        cl_eb, cl_bb],  # EE, EB, BE, BB
+                                        coupled=coupled,
+                                        wa=w02, wb=w22).reshape([nbl_4covnmt, 2,
+                                                                nbl_4covnmt, 4])
     covar_TE_EE = covar_02_22[:, 0, :, 0]
     covar_TE_EB = covar_02_22[:, 0, :, 1]
     covar_TE_BE = covar_02_22[:, 0, :, 2]
@@ -774,18 +775,18 @@ if part_sky:
     covar_TB_BB = covar_02_22[:, 1, :, 3]
 
     covar_22_22 = nmt.gaussian_covariance(cw,
-                                          2, 2, 2, 2,  # Spins of the 4 fields
-                                          [cl_ee, cl_eb,
-                                           cl_eb, cl_bb],  # EE, EB, BE, BB
-                                          [cl_ee, cl_eb,
-                                           cl_eb, cl_bb],  # EE, EB, BE, BB
-                                          [cl_ee, cl_eb,
-                                           cl_eb, cl_bb],  # EE, EB, BE, BB
-                                          [cl_ee, cl_eb,
-                                           cl_eb, cl_bb],  # EE, EB, BE, BB
-                                          coupled=coupled,
-                                          wa=w22, wb=w22).reshape([nbl_4covnmt, 4,
-                                                                   nbl_4covnmt, 4])
+                                        2, 2, 2, 2,  # Spins of the 4 fields
+                                        [cl_ee, cl_eb,
+                                        cl_eb, cl_bb],  # EE, EB, BE, BB
+                                        [cl_ee, cl_eb,
+                                        cl_eb, cl_bb],  # EE, EB, BE, BB
+                                        [cl_ee, cl_eb,
+                                        cl_eb, cl_bb],  # EE, EB, BE, BB
+                                        [cl_ee, cl_eb,
+                                        cl_eb, cl_bb],  # EE, EB, BE, BB
+                                        coupled=coupled,
+                                        wa=w22, wb=w22).reshape([nbl_4covnmt, 4,
+                                                                nbl_4covnmt, 4])
 
     covar_EE_EE = covar_22_22[:, 0, :, 0]
     covar_EE_EB = covar_22_22[:, 0, :, 1]
@@ -847,7 +848,7 @@ if part_sky:
     noise_3x2pt_5d = np.zeros_like(cl_3x2pt_5d)
 
     cov_3x2pt_GO_10D = utils.covariance_einsum(cl_3x2pt_5d, noise_3x2pt_5d, fsky_mask,
-                                               ells_4covsb, delta_ells_4covsb)
+                                            ells_4covsb, delta_ells_4covsb)
 
     probe_a_ix, probe_b_ix, probe_c_ix, probe_d_ix = \
         probename_dict[block[0]], probename_dict[block[1]], probename_dict[block[2]], probename_dict[block[3]]
@@ -859,8 +860,8 @@ if part_sky:
     if cov_nmt.shape != (nbl_eff, nbl_eff):
         print('Binning analytical NaMaster covariance')
         cov_nmt = utils.bin_2d_matrix(cov=cov_nmt, ells_in=ells_tot, ells_out=ells_eff, 
-                                      ells_out_edges=ells_eff_edges, weights=ell_weights,
-                                      ells_of_weights=ells_bpw, which_binning='mean')
+                                    ells_out_edges=ells_eff_edges, weights=ell_weights,
+                                    ells_of_weights=ells_bpw, which_binning='mean')
     if cov_sb.shape != (nbl_eff, nbl_eff):
         print('Binning analytical Spaceborne covariance')
         binned_cov_sb = utils.bin_2d_matrix(cov=cov_sb, ells_in=ells_4covsb, ells_out=ells_eff,
@@ -899,13 +900,13 @@ if part_sky:
 
     print('Producing gaussian simulations...')
     simulated_cls_dict = produce_gaussian_sims(cl_GG_unbinned[:, zi, zi],
-                                               cl_LL_unbinned[:, zi, zi],
-                                               cl_BB_unbinned[:, zi, zi],
-                                               cl_GL_unbinned[:, zi, zi],
-                                               nside=nside, nreal=nreal,
-                                               mask=mask,
-                                               load_maps=False,
-                                               which_pseudo_cls='healpy')
+                                            cl_LL_unbinned[:, zi, zi],
+                                            cl_BB_unbinned[:, zi, zi],
+                                            cl_GL_unbinned[:, zi, zi],
+                                            nside=nside, nreal=nreal,
+                                            mask=mask,
+                                            load_maps=False,
+                                            which_pseudo_cls='healpy')
     print('...done in {:.2f}s'.format(time.perf_counter() - start_time))
 
     simulated_cls = simulated_cls_dict[sim_cl_dict_key]
@@ -942,37 +943,107 @@ if part_sky:
     sims_mean = np.mean(simulated_cls, axis=0)
     sims_var = np.var(simulated_cls, axis=0)
     cov_sims = np.cov(simulated_cls, rowvar=False, bias=False)
+    
+    areas = []
+    import re
+
+    # Loop over all files in the folder
+    for filename in os.listdir('../output'):
+        if filename.endswith('.npy'):
+            # Use regular expression to find the pattern that matches the area in deg2
+            match = re.search(r'_(\d+\.\d+)deg2', filename)
+            if match:
+                # Extract the area value and convert to float
+                area = float(match.group(1))
+                areas.append(area)
+
+    areas.sort()
+    
+    from matplotlib.colors import LogNorm
+
+    fig, ax = plt.subplots()
+    # colors = cm.viridis(np.linspace(0, 1, len(areas)))
+    
+    norm = LogNorm(vmin=min(areas), vmax=max(areas))
+    colors = cm.viridis(norm(areas))  # Normalize areas before applying colors
+
+
+    minimum_acceptable_area, means = [], []
+    for i, survey_area_deg2 in enumerate(areas):
+        diag_cov_sb = np.load(f'../output/diag_cov_sb_{survey_area_deg2:.1f}deg2.npy')
+        diag_cov_nmt = np.load(f'../output/diag_cov_nmt_{survey_area_deg2:.1f}deg2.npy')
+        
+        perc_diff = utils.percent_diff(diag_cov_sb, diag_cov_nmt)
+        means.append(np.mean(perc_diff))
+        
+        ax.plot(ells_eff, perc_diff, c=colors[i])
+        
+        if np.all(np.fabs(perc_diff) < 10): 
+            minimum_acceptable_area.append(survey_area_deg2)
+
+    min_area = min(minimum_acceptable_area)
+    ax.set_xlabel(r"$\ell$")
+    ax.set_ylabel("diag SB/nmt [%]")
+    ax.set_title('GCph, $z_i = z_j = z_k = z_l = 0$\n' + f'minimum area for <10% agreement: {min_area} deg2')
+    ax.fill_between(ells_eff, -10, 10, color='k', alpha=0.1)
+    ax.axhline(-10, color='k', alpha=1, ls='--')
+    ax.axhline(10, color='k', alpha=1, ls='--')
+
+    sm = plt.cm.ScalarMappable(cmap=cm.viridis, norm=norm)
+    sm.set_array([])
+    cbar = fig.colorbar(sm, ax=ax)
+    cbar.set_label('Survey area [deg²]')
+    
+    plt.tight_layout()
+    plt.savefig('../output/GCph_knox_agreement.pdf', dpi=300)
+    plt.savefig('../output/GCph_knox_agreement.png', dpi=300)
+    plt.show()
+
+    plt.plot(areas, means, marker='.')
+    plt.xlabel('Survey area [deg²]')
+    plt.ylabel("mean diag SB/nmt [%]")
+    plt.fill_between(areas, -10, 10, color='k', alpha=0.1)
+    plt.axhline(-10, color='k', alpha=1, ls='--')
+    plt.axhline(10, color='k', alpha=1, ls='--')
+    plt.xscale('log')
+    plt.tight_layout()
+    plt.savefig('../output/GCph_knox_agreement_mean.pdf', dpi=300)
+    plt.savefig('../output/GCph_knox_agreement_mean.png', dpi=300)
+    plt.show()
+
 
     # ! PLOT DIAGONAL, for zi = zj = zk = zl = 0
     # no delta_ell if you're using the pseudo-cls in the gaussian_simulations func!!
 
-    label = r'part_sky, $\ell^\prime=\ell+{off_diag:d}$'
+    colors = cm.plasma(np.linspace(0, 1, 5))
+    label = r'cov_nmt, $\ell^\prime=\ell+{off_diag:d}$'
     title = f'cov {block}\nsurvey_area = {survey_area_deg2} deg2\nlinear binning,'\
-        f' $\Delta\ell={delta_ells_4covsb[0]:.1f}$'
-    colors = cm.rainbow(np.linspace(0, 1, 4))
+        f' $\Delta\ell={delta_ells_bpw[0]:.1f}$'
     fig, ax = plt.subplots(2, 1, figsize=(10, 10), sharex=True,
-                           gridspec_kw={'wspace': 0, 'hspace': 0, 'height_ratios': [2, 1]})
+                        gridspec_kw={'wspace': 0, 'hspace': 0, 'height_ratios': [2, 1]})
     ax[0].set_title(title)
-    ax[0].semilogy(ells_eff, np.diag(binned_cov_sb), label='cov_sb/fsky_mask', marker='.', c='red')
-    ax[0].semilogy(ells_eff, np.diag(cov_nmt), label=r'cov_nmt', marker='.', c='k')
-    # ax[0].semilogy(ells_eff, np.diag(cov_sims), label='cov_sims', marker='.', c='tab:blue')
-    # ax[0].semilogy(ells_eff, np.diag(cov_sims_nmt), label='cov_sims_nmt', marker='.', c='green')
+    ax[0].loglog(ells_eff, np.diag(binned_cov_sb), label='cov_sb/fsky_mask', marker='.', c='tab:blue')
+    ax[0].loglog(ells_eff, np.diag(cov_nmt), label=r'abs cov_nmt, $\ell^\prime=\ell$', marker='.', c=colors[0])
+    # ax[0].loglog(ells_eff, np.diag(cov_sims), label='cov_sims', marker='.', c='tab:blue')
+    # ax[0].loglog(ells_eff, np.diag(cov_sims_nmt), label='cov_sims_nmt', marker='.', c='green')
+    
+    for k in range(1, 3):
+        diag_nmt = np.diag(cov_nmt, k=k)
+        # diag_sim = np.diag(cov_sim, k=k)
+        l_mid = get_lmid(ells_eff, k)
+        l_mid_tot = get_lmid(ells_tot, k)
+        # ls_nmt = '--' if np.all(diag_nmt < 0) else '-'
+        # ls_sim = '--' if np.all(diag_sim < 0) else '-'
+        ls_nmt = '-' 
+        ls_sim = '--'
+        # diag_nmt = np.fabs(diag_nmt) if np.all(diag_nmt < 0) else diag_nmt
+        # diag_sim = np.fabs(diag_sim) if np.all(diag_sim < 0) else diag_sim
+        diag_nmt = np.fabs(diag_nmt)
+        # diag_sim = np.fabs(diag_sim)
+        ax[0].loglog(l_mid, diag_nmt, label='abs ' + label.format(off_diag=k), marker='.', ls=ls_nmt, c=colors[k])
+        # ax[0].loglog(l_mid_tot, diag_sim, marker='', ls=ls_sim, c=colors[k], alpha=0.7)
 
-    # for k in range(4):
-    #     diag_nmt = np.diag(cov_nmt, k=k)
-    #     diag_sim = np.diag(cov_sim, k=k)
-    #     l_mid = 0.5 * (ells_eff[k:] + ells_eff[:-k])
-    #     l_mid_tot = 0.5 * (ells_tot[k:] + ells_tot[:-k])
-    #     ls_nmt = '--' if np.all(diag_nmt < 0) else '-'
-    #     ls_sim = '--' if np.all(diag_sim < 0) else '-'
-    #     # diag_nmt = np.fabs(diag_nmt) if np.all(diag_nmt < 0) else diag_nmt
-    #     # diag_sim = np.fabs(diag_sim) if np.all(diag_sim < 0) else diag_sim
-    #     diag_nmt = np.fabs(diag_nmt)
-    #     diag_sim = np.fabs(diag_sim)
-    #     ax[0].semilogy(l_mid, diag_nmt, label=label.format(off_diag=k), marker='.', ls=ls_nmt, c=colors[k])
-    #     ax[0].semilogy(l_mid_tot, diag_sim, marker='', ls=ls_sim, c=colors[k], alpha=0.7)
-
-    ax[1].plot(ells_eff, utils.percent_diff(np.diag(binned_cov_sb), np.diag(cov_nmt)), marker='.', label='sb vs nmt', c='red')
+    ax[1].plot(ells_eff, utils.percent_diff(np.diag(binned_cov_sb), np.diag(cov_nmt)), marker='.', label='sb/nmt', c='tab:blue')
     # ax[1].plot(ells_eff, utils.percent_diff(np.diag(cov_sims), np.diag(cov_nmt)),
     #    marker='.', label='sim vs nmt', c='tab:blue')
     # ax[1].plot(ells_eff, utils.percent_diff(np.diag(cov_sims_nmt), np.diag(cov_nmt)), marker='.', label='cov_sims_nmt vs nmt', c='green')
