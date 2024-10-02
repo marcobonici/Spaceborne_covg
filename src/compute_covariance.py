@@ -867,50 +867,6 @@ if part_sky:
                                             ells_out_edges=ells_eff_edges, weights=None, 
                                             ells_of_weights=ells_bpw, which_binning='mean')
 
-    def linear_lmin_binning(nside, lmin, delta_ell_syl):
-        nbl = (lmax - lmin) // delta_ell_syl + 1
-        elli = np.zeros(nbl, int)
-        elle = np.zeros(nbl, int)
-
-        for i in range(nbl):
-            elli[i] = lmin + i * delta_ell_syl
-            elle[i] = lmin + (i + 1) * delta_ell_syl
-
-        b = nmt.NmtBin.from_edges(elli, elle)
-        return b
-
-    lmin = lmin_eff
-    cl_in_unbinned = np.load(f'{cfg["cl_GG_3D_path"].format(ROOT=ROOT)}')[:, zi, zj]
-
-    lin_binning = linear_lmin_binning(nside, lmin_eff, ells_per_band)
-    ells_eff_syl = lin_binning.get_effective_ells()
-    ell_unbinned = np.arange(cl_in_unbinned.shape[0])
-
-    var_fsky_lin_unbinned = (2 * cl_in_unbinned**2) / ((2 * ell_unbinned + 1))
-
-    # compare cls
-    plt.figure()
-    plt.loglog(ells_tot, cl_GG_unbinned[:, 0, 0], marker='.')
-    plt.loglog(cl_in_unbinned, marker='.')
-
-    # compare unbinned cov
-    plt.figure()
-    plt.loglog(ell_unbinned, var_fsky_lin_unbinned, marker='.')
-    plt.loglog(np.diag(cov_sb), marker='.')
-
-    var_fsky_lin_binned = np.zeros(ells_eff_syl.size)
-    delta_ell_syl = ells_per_band
-    for i in range(ells_eff_syl.size):
-        sli = np.arange(lmin + i * delta_ell_syl, lmin + (i + 1) * delta_ell_syl)
-        var_fsky_lin_binned[i] = np.mean(var_fsky_lin_unbinned[sli]) / delta_ell_syl
-        var_fsky_lin_binned_test2d = np.mean(np.diag(var_fsky_lin_unbinned[sli])) 
-
-    # compare binned cov
-    plt.figure()
-    plt.loglog(ells_eff_syl, var_fsky_lin_binned, marker='.')
-    plt.loglog(ells_eff, np.diag(binned_cov_sb), marker='.')
-    # plt.plot(ells_eff, utils.percent_diff(np.diag(binned_cov_sb), var_fsky_lin_binned[:-1]), marker='.')
-
     # ! SAMPLE COVARIANCE - FROM NAMASTER DOCS
     probe = block[0] + block[1]
     cov_sims_nmt = sample_cov_nmt(zi, probe)
@@ -999,7 +955,6 @@ if part_sky:
     ax[0].set_title(title)
     ax[0].semilogy(ells_eff, np.diag(binned_cov_sb), label='cov_sb/fsky_mask', marker='.', c='red')
     ax[0].semilogy(ells_eff, np.diag(cov_nmt), label=r'cov_nmt', marker='.', c='k')
-    ax[0].semilogy(ells_eff_syl, var_fsky_lin_binned, label=r'sylv', marker='.', c='blue')
     # ax[0].semilogy(ells_eff, np.diag(cov_sims), label='cov_sims', marker='.', c='tab:blue')
     # ax[0].semilogy(ells_eff, np.diag(cov_sims_nmt), label='cov_sims_nmt', marker='.', c='green')
 
@@ -1018,8 +973,6 @@ if part_sky:
     #     ax[0].semilogy(l_mid_tot, diag_sim, marker='', ls=ls_sim, c=colors[k], alpha=0.7)
 
     ax[1].plot(ells_eff, utils.percent_diff(np.diag(binned_cov_sb), np.diag(cov_nmt)), marker='.', label='sb vs nmt', c='red')
-    ax[1].plot(ells_eff, utils.percent_diff(var_fsky_lin_binned[:-1], np.diag(cov_nmt)),
-               marker='.', label='syl vs nmt', c='red')
     # ax[1].plot(ells_eff, utils.percent_diff(np.diag(cov_sims), np.diag(cov_nmt)),
     #    marker='.', label='sim vs nmt', c='tab:blue')
     # ax[1].plot(ells_eff, utils.percent_diff(np.diag(cov_sims_nmt), np.diag(cov_nmt)), marker='.', label='cov_sims_nmt vs nmt', c='green')
