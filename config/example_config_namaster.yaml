@@ -43,10 +43,10 @@ nside: 512
 apodize_mask: True
 aposize: .1 # apodization scale in deg
 ells_per_band: 50 # number of multipole values per bandpower
-nreal: 20
+nreal: 2
 coupled: False  # compute the covariance of the coupled or uncoupled cls
 which_ell_weights: get_weight_list()  # get_weight_list() or get_bandpower_windows()
-which_cls: namaster  # namaster or healpy
+which_cls: healpy  # namaster or healpy
 compute_namaster_sims: False
 
 # datavector and covariance ordering options

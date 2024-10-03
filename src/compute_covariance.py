@@ -481,6 +481,7 @@ if part_sky:
             cl_GG_bpw[:, zi, zj] = bin_obj.bin_cell(cl_GG_unbinned[:, zi, zj])
             cl_GL_bpw[:, zi, zj] = bin_obj.bin_cell(cl_GL_unbinned[:, zi, zj])
             cl_LL_bpw[:, zi, zj] = bin_obj.bin_cell(cl_LL_unbinned[:, zi, zj])
+            # these are for a consistency check against bin_obj.bin_cell()
             cl_GG_bpw_dav[:, zi, zj] = utils.bin_cell(ells_in=ells_bpw, ells_out=ells_eff, ells_out_edges=ells_eff_edges,
                                                       cls_in=cl_GG_unbinned[ells_bpw, zi, zj], weights=None,
                                                       ells_eff=ells_eff, which_binning='mean')
@@ -610,6 +611,7 @@ if part_sky:
 
     assert np.allclose(cl_th_bpw, cl_th_bpw_dav, atol=0, rtol=1e-4)
 
+    plt.figure()
     clr = cm.rainbow(np.linspace(0, 1, zbins_use))
     for zi in range(1):
 
@@ -618,7 +620,6 @@ if part_sky:
         plt.plot(ells_eff, master_cl[:, zi, zi], label=f'MASTER-cl', alpha=.7, marker='.')
         plt.plot(ells_tot, pseudo_cl_dav[:, zi, zi], label=f'dav pseudo-cl', alpha=.7)
 
-        plt.scatter(ells_eff, cl_th_bpw_dav[:, zi, zi], marker='.', label=f'cl_th_bpw_dav')
         plt.scatter(ells_eff, cl_th_bpw[:, zi, zi] * fsky_mask, marker='.', label=f'bpw th cls*fsky')
         plt.plot(ells_tot, cl_th_unbinned[:, zi, zi], label=f'unbinned th cls')
         plt.plot(ells_tot, cl_th_unbinned[:, zi, zi] * fsky_mask, label=f'unbinned th cls*fsky')
@@ -662,6 +663,9 @@ if part_sky:
         cl_GG_4covsb = pcl_GG_nmt  # or bpw_pcl_GG_nmt?
         cl_GL_4covsb = pcl_GL_nmt  # or bpw_pcl_GL_nmt?
         cl_LL_4covsb = pcl_LL_nmt  # or bpw_pcl_LL_nmt?
+        ells_4covsb = ells_tot
+        nbl_4covsb = len(ells_4covsb)
+        delta_ells_4covsb = np.ones(nbl_4covsb)  # since it's unbinned
     else:
         nbl_4covnmt = nbl_eff
         cl_GG_4covnmt = cl_GG_unbinned[:, zi, zj]
@@ -870,12 +874,12 @@ if part_sky:
         print('Binning analytical NaMaster covariance')
         cov_nmt = utils.bin_2d_matrix(cov=cov_nmt, ells_in=ells_tot, ells_out=ells_eff,
                                       ells_out_edges=ells_eff_edges, weights=None,
-                                      ells_of_weights=ells_bpw, which_binning='mean')
+                                      which_binning='mean')
     if cov_sb.shape != (nbl_eff, nbl_eff):
         print('Binning analytical Spaceborne covariance')
         binned_cov_sb = utils.bin_2d_matrix(cov=cov_sb, ells_in=ells_4covsb, ells_out=ells_eff,
                                             ells_out_edges=ells_eff_edges, weights=None,
-                                            ells_of_weights=ells_bpw, which_binning='mean')
+                                         which_binning='mean')
 
     # ! SAMPLE COVARIANCE - FROM NAMASTER DOCS
     if cfg['compute_namaster_sims']:
@@ -939,157 +943,27 @@ if part_sky:
     plt.figure()
     count = 0
     for i in range(nreal)[:100:5]:
-        plt.semilogy(ells_eff, simulated_cls[i, :], label=f'simulated {coupled_label} cls' if count == 0 else '',
+        
+        plt.semilogy(ells_tot, simulated_cls[i, :], label=f'simulated {coupled_label} cls' if count == 0 else '',
                      marker='.')
+        
         if simulated_cls.shape[1] != nbl_eff:
             plt.scatter(ells_eff, bpw_sim_cls[i, :], label=f'bpw simulated {coupled_label} cls' if count == 0 else '')
+        
         count += 1
+    plt.loglog(cl_use, label='theory cls', c='tab:blue')
     plt.loglog(cl_use * fsky_mask, label='theory cls*fsky_mask', c='k')
-    plt.loglog(cl_use, label='theory cls', c='blue')
     plt.axvline(lmax_healpy_safe, c='k', ls='--', label='1.5 * nside')
     plt.legend()
     plt.xlabel(r'$\ell$')
     plt.ylabel(r'$C_\ell$')
-
-    assert False, 'stop here to check pcls'
+    plt.tight_layout()
 
     simulated_cls = bpw_sim_cls
 
     sims_mean = np.mean(simulated_cls, axis=0)
     sims_var = np.var(simulated_cls, axis=0)
     cov_sims = np.cov(simulated_cls, rowvar=False, bias=False)
-
-    areas = []
-    import re
-
-    # Loop over all files in the folder
-    for filename in os.listdir('../output'):
-        if filename.endswith('.npy'):
-            # Use regular expression to find the pattern that matches the area in deg2
-            match = re.search(r'_(\d+\.\d+)deg2', filename)
-            if match:
-                # Extract the area value and convert to float
-                area = float(match.group(1))
-                areas.append(area)
-
-    areas.sort()
-
-    from matplotlib.colors import LogNorm
-
-    fig, ax = plt.subplots()
-    # colors = cm.viridis(np.linspace(0, 1, len(areas)))
-
-    norm = LogNorm(vmin=min(areas), vmax=max(areas))
-    colors = cm.viridis(norm(areas))  # Normalize areas before applying colors
-
-    minimum_acceptable_area, means = [], []
-    for i, survey_area_deg2 in enumerate(areas):
-        diag_cov_sb = np.load(f'../output/diag_cov_sb_{survey_area_deg2:.1f}deg2.npy')
-        diag_cov_nmt = np.load(f'../output/diag_cov_nmt_{survey_area_deg2:.1f}deg2.npy')
-
-        perc_diff = utils.percent_diff(diag_cov_sb, diag_cov_nmt)
-        means.append(np.mean(perc_diff))
-
-        ax.plot(ells_eff, perc_diff, c=colors[i])
-
-        if np.all(np.fabs(perc_diff) < 10):
-            minimum_acceptable_area.append(survey_area_deg2)
-
-    min_area = min(minimum_acceptable_area)
-    ax.set_xlabel(r"$\ell$")
-    ax.set_ylabel("diag SB/nmt [%]")
-    ax.set_title('GCph, $z_i = z_j = z_k = z_l = 0$\n' + f'minimum area for <10% agreement: {min_area} deg2')
-    ax.fill_between(ells_eff, -10, 10, color='k', alpha=0.1)
-    ax.axhline(-10, color='k', alpha=1, ls='--')
-    ax.axhline(10, color='k', alpha=1, ls='--')
-
-    sm = plt.cm.ScalarMappable(cmap=cm.viridis, norm=norm)
-    sm.set_array([])
-    cbar = fig.colorbar(sm, ax=ax)
-    cbar.set_label('Survey area [deg²]')
-
-    plt.tight_layout()
-    plt.savefig('../output/GCph_knox_agreement.pdf', dpi=300)
-    plt.savefig('../output/GCph_knox_agreement.png', dpi=300)
-    plt.show()
-
-    plt.plot(areas, means, marker='.')
-    plt.xlabel('Survey area [deg²]')
-    plt.ylabel("mean diag SB/nmt [%]")
-    plt.fill_between(areas, -10, 10, color='k', alpha=0.1)
-    plt.axhline(-10, color='k', alpha=1, ls='--')
-    plt.axhline(10, color='k', alpha=1, ls='--')
-    plt.xscale('log')
-    plt.tight_layout()
-    plt.savefig('../output/GCph_knox_agreement_mean.pdf', dpi=300)
-    plt.savefig('../output/GCph_knox_agreement_mean.png', dpi=300)
-    plt.show()
-
-    areas = []
-    import re
-
-    # Loop over all files in the folder
-    for filename in os.listdir('../output'):
-        if filename.endswith('.npy'):
-            # Use regular expression to find the pattern that matches the area in deg2
-            match = re.search(r'_(\d+\.\d+)deg2', filename)
-            if match:
-                # Extract the area value and convert to float
-                area = float(match.group(1))
-                areas.append(area)
-
-    areas.sort()
-
-    from matplotlib.colors import LogNorm
-
-    fig, ax = plt.subplots()
-    # colors = cm.viridis(np.linspace(0, 1, len(areas)))
-
-    norm = LogNorm(vmin=min(areas), vmax=max(areas))
-    colors = cm.viridis(norm(areas))  # Normalize areas before applying colors
-
-    minimum_acceptable_area, means = [], []
-    for i, survey_area_deg2 in enumerate(areas):
-        diag_cov_sb = np.load(f'../output/diag_cov_sb_{survey_area_deg2:.1f}deg2.npy')
-        diag_cov_nmt = np.load(f'../output/diag_cov_nmt_{survey_area_deg2:.1f}deg2.npy')
-
-        perc_diff = utils.percent_diff(diag_cov_sb, diag_cov_nmt)
-        means.append(np.mean(perc_diff))
-
-        ax.plot(ells_eff, perc_diff, c=colors[i])
-
-        if np.all(np.fabs(perc_diff) < 10):
-            minimum_acceptable_area.append(survey_area_deg2)
-
-    min_area = min(minimum_acceptable_area)
-    ax.set_xlabel(r"$\ell$")
-    ax.set_ylabel("diag SB/nmt [%]")
-    ax.set_title('GCph, $z_i = z_j = z_k = z_l = 0$\n' + f'minimum area for <10% agreement: {min_area} deg2')
-    ax.fill_between(ells_eff, -10, 10, color='k', alpha=0.1)
-    ax.axhline(-10, color='k', alpha=1, ls='--')
-    ax.axhline(10, color='k', alpha=1, ls='--')
-
-    sm = plt.cm.ScalarMappable(cmap=cm.viridis, norm=norm)
-    sm.set_array([])
-    cbar = fig.colorbar(sm, ax=ax)
-    cbar.set_label('Survey area [deg²]')
-
-    plt.tight_layout()
-    plt.savefig('../output/GCph_knox_agreement.pdf', dpi=300)
-    plt.savefig('../output/GCph_knox_agreement.png', dpi=300)
-    plt.show()
-
-    plt.plot(areas, means, marker='.')
-    plt.xlabel('Survey area [deg²]')
-    plt.ylabel("mean diag SB/nmt [%]")
-    plt.fill_between(areas, -10, 10, color='k', alpha=0.1)
-    plt.axhline(-10, color='k', alpha=1, ls='--')
-    plt.axhline(10, color='k', alpha=1, ls='--')
-    plt.xscale('log')
-    plt.tight_layout()
-    plt.savefig('../output/GCph_knox_agreement_mean.pdf', dpi=300)
-    plt.savefig('../output/GCph_knox_agreement_mean.png', dpi=300)
-    plt.show()
 
     # ! PLOT DIAGONAL, for zi = zj = zk = zl = 0
     # no delta_ell if you're using the pseudo-cls in the gaussian_simulations func!!
@@ -1102,7 +976,7 @@ if part_sky:
     fig, ax = plt.subplots(2, 1, figsize=(10, 10), sharex=True,
                            gridspec_kw={'wspace': 0, 'hspace': 0, 'height_ratios': [2, 1]})
     ax[0].set_title(title)
-    # ax[0].loglog(ells_eff, np.diag(binned_cov_sb), label=f'cov_sb/fsky_mask, {diag_label}', marker='.', c='tab:orange')
+    ax[0].loglog(ells_eff, np.diag(binned_cov_sb), label=f'cov_sb/fsky_mask, {diag_label}', marker='.', c='tab:orange')
     ax[0].loglog(ells_eff, np.diag(cov_nmt), label=f'cov_nmt, {diag_label}', marker='.', c=clr[0])
     ax[0].loglog(ells_eff, np.diag(cov_sims), label=f'cov_sims, {diag_label}', marker='.', c=clr[0], ls='--')
     # ax[0].loglog(ells_eff, np.diag(cov_sims_nmt), label=f'cov_sims_nmt, {diag_label}', marker='.', c=clr[0], ls=':')
@@ -1123,8 +997,8 @@ if part_sky:
     #     ax[0].loglog(l_mid, diag_nmt, label='abs ' + label.format(off_diag=k), marker='.', ls=ls_nmt, c=colors[k])
     #     ax[0].loglog(l_mid, diag_sim, marker='', ls=ls_sim, c=colors[k], alpha=0.7)
 
-    # ax[1].plot(ells_eff, utils.percent_diff(np.diag(binned_cov_sb), np.diag(cov_nmt)),
-    #    marker='.', label='sb/nmt', c='tab:orange')
+    ax[1].plot(ells_eff, utils.percent_diff(np.diag(binned_cov_sb), np.diag(cov_nmt)),
+       marker='.', label='sb/nmt', c='tab:orange')
     ax[1].plot(ells_eff, utils.percent_diff(np.diag(cov_sims), np.diag(cov_nmt)),
                marker='.', label='sim/nmt', c=clr[0], ls='--')
     # ax[1].plot(ells_eff, utils.percent_diff(np.diag(cov_sims_nmt), np.diag(cov_nmt)),
