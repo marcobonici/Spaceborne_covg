@@ -14,7 +14,6 @@ import utils
 import os
 ROOT = os.getenv("ROOT")
 
-
 def get_sample_field(cl_TT, cl_EE, cl_BB, cl_TE, nside):
     """This routine generates a spin-0 and a spin-2 Gaussian random field based
     on these power spectra.
@@ -121,12 +120,12 @@ def produce_gaussian_sims(cl_TT, cl_EE, cl_BB, cl_TE, nreal, nside, mask, load_m
 
             if coupled:
                 pseudo_cl_tt = nmt.compute_coupled_cell(f0, f0)[0]
-                # pseudo_cl_te = nmt.compute_coupled_cell(f0, f2)[0]
-                # pseudo_cl_ee = nmt.compute_coupled_cell(f2, f2)[0]
+                pseudo_cl_te = nmt.compute_coupled_cell(f0, f2)[0]
+                pseudo_cl_ee = nmt.compute_coupled_cell(f2, f2)[0]
             else:
                 pseudo_cl_tt = compute_master(f0, f0, w00)
-                # pseudo_cl_te = compute_master(f0, f2, w02)
-                # pseudo_cl_ee = compute_master(f2, f2, w22)
+                pseudo_cl_te = compute_master(f0, f2, w02)
+                pseudo_cl_ee = compute_master(f2, f2, w22)
 
         elif which_cls == 'healpy':
 
@@ -143,13 +142,13 @@ def produce_gaussian_sims(cl_TT, cl_EE, cl_BB, cl_TE, nreal, nside, mask, load_m
             raise ValueError('which_cls must be namaster or healpy')
 
         pseudo_cl_tt_list.append(pseudo_cl_tt)
-        # pseudo_cl_te_list.append(pseudo_cl_te)
-        # pseudo_cl_ee_list.append(pseudo_cl_ee)
+        pseudo_cl_te_list.append(pseudo_cl_te)
+        pseudo_cl_ee_list.append(pseudo_cl_ee)
 
     sim_cls_dict = {
         'pseudo_cl_tt': np.array(pseudo_cl_tt_list),
-        # 'pseudo_cl_te': np.array(pseudo_cl_te_list),
-        # 'pseudo_cl_ee': np.array(pseudo_cl_ee_list),
+        'pseudo_cl_te': np.array(pseudo_cl_te_list),
+        'pseudo_cl_ee': np.array(pseudo_cl_ee_list),
     }
     print('...done')
 
@@ -341,22 +340,30 @@ if part_sky:
         elif mask_path.endswith('.npy'):
             mask = np.load(mask_path)
         mask = hp.ud_grade(mask, nside_out=nside)
+
     else:
         mask = utils.generate_polar_cap(area_deg2=survey_area_deg2, nside=cfg['nside'])
 
-    # plot/apodize
+    # apodize
+    fsky_mask = np.mean(mask) 
+    survey_area_deg2_mask = fsky_mask * utils.DEG2_IN_SPHERE
+
     hp.mollview(mask, title='before apodization', cmap='inferno_r')
-    if cfg['apodize_mask'] and int(survey_area_deg2) != 41252:
-        mask = nmt.mask_apodization(mask, aposize=cfg['aposize'], apotype="Smooth")
-    hp.mollview(mask, title='after apodization', cmap='inferno_r')
+    if cfg['apodize_mask'] and int(survey_area_deg2_mask) != 41252:
+        mask = nmt.mask_apodization(mask, aposize=.1, apotype="Smooth")
+        hp.mollview(mask, title='after apodization', cmap='inferno_r')
+
+    # recompute after apodizing
+    fsky_mask = np.mean(mask) 
+    survey_area_deg2_mask = fsky_mask * utils.DEG2_IN_SPHERE
+
+    fsky = fsky_mask
+    survey_area_deg2 = survey_area_deg2_mask
 
     # check fsky and nside
-    fsky_mask = np.mean(mask)  # ! this may change due to apodization, and this is the relevant fsky now!
     nside_from_mask = hp.get_nside(mask)
     # assert np.isclose(fsky_mask, fsky, atol=0, rtol=2e-1), 'fsky from mask does not match with fsky within 10%'
     assert nside_from_mask == cfg['nside'], 'nside from mask is not consistent with the desired nside in the cfg file'
-    fsky = fsky_mask
-    survey_area_deg2 = fsky * utils.DEG2_IN_SPHERE
 
     npix = hp.nside2npix(nside)
     pix_area = 4 * np.pi
@@ -651,7 +658,7 @@ if part_sky:
 
     # ! cov testing options
     zi, zj, zk, zl = 0, 0, 0, 0
-    block = 'GGGG'
+    block = 'LLLL'
     # ! end cov testing options
 
     if coupled:
@@ -879,7 +886,7 @@ if part_sky:
         print('Binning analytical Spaceborne covariance')
         binned_cov_sb = utils.bin_2d_matrix(cov=cov_sb, ells_in=ells_4covsb, ells_out=ells_eff,
                                             ells_out_edges=ells_eff_edges, weights=None,
-                                         which_binning='mean')
+                                            which_binning='mean')
 
     # ! SAMPLE COVARIANCE - FROM NAMASTER DOCS
     if cfg['compute_namaster_sims']:
@@ -936,20 +943,17 @@ if part_sky:
     # ! bin *before* computing the covariance
     # TODO check whether binning the covariance or the cls gives similar (same?) results
     if simulated_cls.shape[1] != nbl_eff:
+        print('Binning simulated cls into bandpowers...')
         bpw_sim_cls = np.zeros((nreal, nbl_eff))
         for i in range(nreal):
             bpw_sim_cls[i, :] = bin_obj.bin_cell(simulated_cls[i, :])
+        simulated_cls = bpw_sim_cls
 
     plt.figure()
     count = 0
     for i in range(nreal)[:100:5]:
-        
-        plt.semilogy(ells_tot, simulated_cls[i, :], label=f'simulated {coupled_label} cls' if count == 0 else '',
+        plt.semilogy(ells_eff, simulated_cls[i, :], label=f'simulated {coupled_label} cls' if count == 0 else '',
                      marker='.')
-        
-        if simulated_cls.shape[1] != nbl_eff:
-            plt.scatter(ells_eff, bpw_sim_cls[i, :], label=f'bpw simulated {coupled_label} cls' if count == 0 else '')
-        
         count += 1
     plt.loglog(cl_use, label='theory cls', c='tab:blue')
     plt.loglog(cl_use * fsky_mask, label='theory cls*fsky_mask', c='k')
@@ -958,8 +962,6 @@ if part_sky:
     plt.xlabel(r'$\ell$')
     plt.ylabel(r'$C_\ell$')
     plt.tight_layout()
-
-    simulated_cls = bpw_sim_cls
 
     sims_mean = np.mean(simulated_cls, axis=0)
     sims_var = np.var(simulated_cls, axis=0)
@@ -998,7 +1000,7 @@ if part_sky:
     #     ax[0].loglog(l_mid, diag_sim, marker='', ls=ls_sim, c=colors[k], alpha=0.7)
 
     ax[1].plot(ells_eff, utils.percent_diff(np.diag(binned_cov_sb), np.diag(cov_nmt)),
-       marker='.', label='sb/nmt', c='tab:orange')
+               marker='.', label='sb/nmt', c='tab:orange')
     ax[1].plot(ells_eff, utils.percent_diff(np.diag(cov_sims), np.diag(cov_nmt)),
                marker='.', label='sim/nmt', c=clr[0], ls='--')
     # ax[1].plot(ells_eff, utils.percent_diff(np.diag(cov_sims_nmt), np.diag(cov_nmt)),
