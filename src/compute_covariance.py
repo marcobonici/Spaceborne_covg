@@ -114,9 +114,9 @@ def produce_gaussian_sims(cl_TT, cl_EE, cl_BB, cl_TE, nreal, nside, mask, load_m
         map_u = maps_u[i]
 
         if which_cls == 'namaster':
-            # initialize fields
+            
             f0 = nmt.NmtField(mask, [map_t], lite=True)
-            # f2 = nmt.NmtField(mask, [map_q, map_u], lite=True)
+            f2 = nmt.NmtField(mask, [map_q, map_u], lite=True)
 
             if coupled:
                 pseudo_cl_tt = nmt.compute_coupled_cell(f0, f0)[0]
@@ -593,7 +593,7 @@ if part_sky:
     hp_pcl_GL = hp_pcl_tot[3, :]
 
     # ! compare results
-    block = 'GGGG'
+    block = 'LLLL'
 
     if block == 'GGGG':
         hp_pcl = hp_pcl_GG
@@ -955,8 +955,8 @@ if part_sky:
         plt.semilogy(ells_eff, simulated_cls[i, :], label=f'simulated {coupled_label} cls' if count == 0 else '',
                      marker='.')
         count += 1
-    plt.loglog(cl_use, label='theory cls', c='tab:blue')
-    plt.loglog(cl_use * fsky_mask, label='theory cls*fsky_mask', c='k')
+    plt.loglog(cl_use, label='theory cls', c='tab:orange')
+    plt.loglog(cl_use * fsky_mask, label='theory cls*fsky_mask', c='k', ls='--')
     plt.axvline(lmax_healpy_safe, c='k', ls='--', label='1.5 * nside')
     plt.legend()
     plt.xlabel(r'$\ell$')
@@ -1043,7 +1043,7 @@ if part_sky:
     plt.tight_layout()
     plt.show()
 
-    assert False, 'stop here to check GGGG cov diag'
+    assert False, 'stop here to check partial-sky cov'
 
     # Bandpower info:
     print("Bandpower info:")
