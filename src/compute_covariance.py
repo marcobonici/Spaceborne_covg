@@ -1001,8 +1001,8 @@ if part_sky:
 
     ax[1].plot(ells_eff, utils.percent_diff(np.diag(binned_cov_sb), np.diag(cov_nmt)),
                marker='.', label='sb/nmt', c='tab:orange')
-    ax[1].plot(ells_eff, utils.percent_diff(np.diag(cov_sims), np.diag(cov_nmt)),
-               marker='.', label='sim/nmt', c=clr[0], ls='--')
+    # ax[1].plot(ells_eff, utils.percent_diff(np.diag(cov_sims), np.diag(cov_nmt)),
+            #    marker='.', label='sim/nmt', c=clr[0], ls='--')
     # ax[1].plot(ells_eff, utils.percent_diff(np.diag(cov_sims_nmt), np.diag(cov_nmt)),
     #    marker='.', label='sims_nmt/nmt', c=clr[0], ls=':')
 
