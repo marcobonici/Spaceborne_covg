@@ -4,6 +4,7 @@ import sys
 import time
 import warnings
 from matplotlib import cm
+import healpy as hp
 import matplotlib.pyplot as plt
 import numpy as np
 from tqdm import tqdm
@@ -12,15 +13,22 @@ from scipy.interpolate import interp1d, RectBivariateSpline, RegularGridInterpol
 from copy import deepcopy
 import utils
 import os
-ROOT = os.getenv("ROOT")
+ROOT = "/home/marcobonici/Desktop/work"#os.getenv("ROOT")
 
 def get_sample_field(cl_TT, cl_EE, cl_BB, cl_TE, nside):
     """This routine generates a spin-0 and a spin-2 Gaussian random field based
     on these power spectra.
     From https://namaster.readthedocs.io/en/latest/source/sample_covariance.html
     """
-    map_t, map_q, map_u = hp.synfast([cl_TT, cl_EE, cl_BB, cl_TE], nside)
-    return nmt.NmtField(mask, [map_t], lite=False), nmt.NmtField(mask, [map_q, map_u], lite=False)
+    alm, Elm, Blm = hp.synalm([cl_TT, cl_EE, cl_BB, cl_TE, 0*cl_TE, 0*cl_TE],
+                              lmax=3*nside-1, new=True)
+    mpQ, mpU = hp.alm2map_spin([Elm, Blm], nside, 2, 3*nside-1)
+    mpa = hp.alm2map(alm, nside)
+    f0 = nmt.NmtField(mask, [mpa], n_iter=0)
+    f2 = nmt.NmtField(mask, [mpQ, mpU], spin=2, n_iter=0)
+    #map_t, map_q, map_u = hp.synfast([cl_TT, cl_EE, cl_BB, cl_TE], nside)
+    #return nmt.NmtField(mask, [map_t], lite=False), nmt.NmtField(mask, [map_q, map_u], lite=False)
+    return f0, f2
 
 
 def compute_master(f_a, f_b, wsp):
@@ -114,7 +122,7 @@ def produce_gaussian_sims(cl_TT, cl_EE, cl_BB, cl_TE, nreal, nside, mask, load_m
         map_u = maps_u[i]
 
         if which_cls == 'namaster':
-            
+
             f0 = nmt.NmtField(mask, [map_t], lite=True)
             f2 = nmt.NmtField(mask, [map_q, map_u], lite=True)
 
@@ -345,7 +353,7 @@ if part_sky:
         mask = utils.generate_polar_cap(area_deg2=survey_area_deg2, nside=cfg['nside'])
 
     # apodize
-    fsky_mask = np.mean(mask) 
+    fsky_mask = np.mean(mask)
     survey_area_deg2_mask = fsky_mask * utils.DEG2_IN_SPHERE
 
     hp.mollview(mask, title='before apodization', cmap='inferno_r')
@@ -354,7 +362,7 @@ if part_sky:
         hp.mollview(mask, title='after apodization', cmap='inferno_r')
 
     # recompute after apodizing
-    fsky_mask = np.mean(mask) 
+    fsky_mask = np.mean(mask)
     survey_area_deg2_mask = fsky_mask * utils.DEG2_IN_SPHERE
 
     fsky = fsky_mask
